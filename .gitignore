@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Supabase CLI state
+supabase/.temp/
+supabase/.branches/
+
+# Never commit the business workbooks (customer and pricing data)
+*.xlsx
+*.xls
+*.xlsm
+~$*
