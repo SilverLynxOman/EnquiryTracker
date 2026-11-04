@@ -247,7 +247,7 @@ Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions`
 |---|---|
 | Users | Invite all staff; admin screen for roles; optionally restrict sales users to their own enquiries |
 | Backups | Supabase daily backups (Pro plan, or PITR) + nightly CSV export via a GitHub Action |
-| CI/CD | Migrations applied from GitHub Actions on merge to `main` (`supabase db push`), Cloudflare preview deployments for PRs |
+| CI/CD | ✅ Migrations applied from GitHub Actions on merge to `main` (`.github/workflows/migrations.yml`, `supabase db push`; dry run on pull requests). Needs the `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD` repository secrets. ✅ Cloudflare preview deployments for PRs |
 | Tests | Unit tests for parser/normaliser (written); Playwright smoke test for login → add → import |
 | Parallel run | 2 weeks: the app issues references. Excel is updated by import/export only. Reconcile daily counts |
 | Cut-over | Freeze the Excel workbook (read-only archive), app becomes the system of record |
