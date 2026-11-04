@@ -9,9 +9,9 @@ import { Menu } from "./Menu";
 import { Alert, Button, buttonClass } from "./ui";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
-  `relative inline-flex h-14 items-center gap-2 px-2.5 text-body transition-colors duration-150 sm:px-3 ${
+  `relative inline-flex h-14 shrink-0 items-center gap-2 px-2 text-body transition-colors duration-150 sm:px-3 ${
     isActive
-      ? "font-semibold text-primary after:absolute after:inset-x-2.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary sm:after:inset-x-3"
+      ? "font-semibold text-primary after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary sm:after:inset-x-3"
       : "font-medium text-ink-heading hover:text-ink"
   }`;
 
@@ -31,28 +31,29 @@ export function Layout() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 h-14 border-b border-line bg-surface">
-        <div className="flex h-full items-center gap-1 px-5">
-          <Link to="/" className="mr-3 flex items-center gap-2.5 rounded-control text-app font-semibold text-ink">
+        <div className="flex h-full items-center gap-1 px-4 sm:px-5">
+          <Link to="/" className="mr-1 flex items-center gap-2.5 rounded-control text-app font-semibold text-ink">
             <Logo />
             <span className="hidden sm:inline">Enquiry Tracker</span>
           </Link>
-          <span className="mr-2 hidden h-6 w-px bg-line md:block" aria-hidden="true" />
-          <nav aria-label="Main" className="flex h-full items-center">
+          <span className="mx-2 hidden h-6 w-px bg-line lg:block" aria-hidden="true" />
+          {/* On the narrowest phones the icons scroll inside the bar rather than widening the page. */}
+          <nav aria-label="Main" className="flex h-full min-w-0 items-center overflow-x-auto [scrollbar-width:none]">
             <NavLink to="/" end className={navClass}>
               <Icon name="home" />
-              <span className="sr-only md:not-sr-only">Dashboard</span>
+              <span className="sr-only lg:not-sr-only">Dashboard</span>
             </NavLink>
             <NavLink to="/enquiries" className={navClass}>
               <Icon name="register" />
-              <span className="sr-only md:not-sr-only">Register</span>
+              <span className="sr-only lg:not-sr-only">Register</span>
             </NavLink>
             <NavLink to="/reports" className={navClass}>
               <Icon name="chart" />
-              <span className="sr-only md:not-sr-only">Reports</span>
+              <span className="sr-only lg:not-sr-only">Reports</span>
             </NavLink>
             <NavLink to="/inbox" className={navClass} title="New enquiries and e-mails to review from the pricing mailbox">
               <Icon name="inbox" />
-              <span className="sr-only md:not-sr-only">Inbox</span>
+              <span className="sr-only lg:not-sr-only">Inbox</span>
               {waiting > 0 && (
                 <span className="rounded-full bg-selected px-1.5 text-meta font-medium tabular-nums text-primary">
                   {waiting}
@@ -60,19 +61,23 @@ export function Layout() {
                 </span>
               )}
             </NavLink>
+            <NavLink to="/customers" className={navClass} title="Customer list, renaming and merging duplicates">
+              <Icon name="users" />
+              <span className="sr-only lg:not-sr-only">Customers</span>
+            </NavLink>
           </nav>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {canEdit && (
               <Link to="/import" className={buttonClass("ghost")} title="Import Excel">
                 <Icon name="upload" />
-                <span className="sr-only lg:not-sr-only">Import</span>
+                <span className="sr-only xl:not-sr-only">Import</span>
               </Link>
             )}
             {onRegister && (
               <Button variant="ghost" onClick={exporter.run} loading={exporter.running} title="Export the filtered register to Excel">
                 {!exporter.running && <Icon name="download" />}
-                <span className="sr-only lg:not-sr-only">{exporter.running ? "Exporting…" : "Export"}</span>
+                <span className="sr-only xl:not-sr-only">{exporter.running ? "Exporting…" : "Export"}</span>
               </Button>
             )}
             {canEdit && (
@@ -84,7 +89,7 @@ export function Layout() {
             <Menu
               label={`Account and password: ${name}`}
               trigger={initials(name)}
-              triggerClassName="ml-2 flex size-9 items-center justify-center rounded-full bg-selected text-control font-semibold text-primary hover:bg-primary/15"
+              triggerClassName="ml-1 flex size-9 sm:ml-2 items-center justify-center rounded-full bg-selected text-control font-semibold text-primary hover:bg-primary/15"
               header={
                 <div>
                   <div className="text-body font-semibold text-ink">{name}</div>

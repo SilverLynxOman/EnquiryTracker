@@ -19,6 +19,7 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 | New / edit enquiry | Auto reference (`SL` + YY + running number), qty parser, auto totals and profit, lost/cancelled, change history |
 | Import Excel | Upload the daily report or monthly workbook. Preview new / changed / unchanged / invalid rows, then import. The original file is archived |
 | Reports | Daily, weekly (Sat–Fri) and monthly reports: enquiries raised plus earlier ones confirmed, sales-person and mode totals; Excel export in the old report layouts. Analytics: monthly trend and profit chart; conversion and profit by sales person, customer, agent, lane, mode or trade type |
+| Customers | Every customer with enquiry counts and former names; rename; **possible duplicates** grouped by similar spelling, merged in one step (admins). Old names are remembered, so imports and e-mails still find the customer |
 | Inbox | New enquiries read from the pricing mailbox, ready to create with one click; e-mails to review; every enquiry keeps its e-mail history (see [E-mail intake](#e-mail-intake)) |
 
 ## Project layout

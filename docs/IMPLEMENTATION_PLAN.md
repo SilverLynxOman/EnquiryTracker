@@ -169,6 +169,16 @@ E-mail intake (`supabase/migrations/20261104202737_email_intake.sql`):
 
 `enquiries` gains `contact_id`, `requirements` and the source `email`. Sync RPCs (service role only): `begin_mailbox_sync`, `email_match_context`, `ingest_email`, `end_mailbox_sync`. Staff RPCs: `create_enquiry_from_draft` (the one-click create, locked against double creation), `merge_draft_into_enquiry`, `dismiss_draft`, `link_email`, `set_email_ignored`, `draft_from_email`, `draft_duplicates`, `suggest_customers`, `email_inbox_counts`. Triggers link e-mails waiting for a reference when that enquiry is created or imported, and release e-mails when an enquiry is deleted.
 
+Customer merge (`supabase/migrations/20261104215109_customer_merge.sql`):
+
+| Table / view | Purpose |
+|---|---|
+| `customer_summary` (view) | Each customer with its enquiry, confirmed and contact counts, last enquiry date and former names |
+| `customer_not_duplicates` | Pairs that staff marked as different companies; the duplicate finder no longer suggests them |
+| `customer_merges` | History: who merged which customers (names, enquiry counts) into which, and when |
+
+RPCs: `merge_customers(keep, merge[], name)` (admins) moves enquiries, contacts, e-mail drafts and former names to the kept customer, records the merged names as former names (`customer_aliases`), deletes the merged customers and can rename the kept one, all in one transaction. Moving an enquiry is not counted as an app edit, so imports can still update it, and its history reads "Customer: OLD → KEPT (customers merged)". `rename_customer` (editors) keeps the old name as a former name. `mark_customers_distinct` (editors). The duplicate finder itself runs in the browser (`src/lib/customerDuplicates.ts`).
+
 ---
 
 ## 4. Daily workflow in the app
@@ -270,11 +280,11 @@ Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions`
 | Analytics | Conversion by sales person / customer / lane (POL→POD) / agent; profit trend by month; top customers |
 | **Done when** | Management stops requesting the Excel reports because the app's reports and exports replace them |
 
-### Phase 5 — Data quality & follow-up (2 days) ⬜
+### Phase 5 — Data quality & follow-up (2 days) 🟡
 | Task | Detail |
 |---|---|
-| Master-data screens | Customers / agents / sales persons: rename, deactivate, **merge duplicates** (moves enquiries, records alias so future imports map automatically) |
-| Duplicate finder | `pg_trgm` similarity to suggest likely duplicates (e.g. `SYNERGIES CASTING` vs `SYNERGIES CASTINGS`) |
+| Master-data screens | ✅ Customers (2026-11-04): *Customers* page with the full list (counts, former names, search, sort), rename (the old name is remembered), and **merge duplicates**: moves enquiries, contacts and e-mail drafts, records the old names as aliases so future imports and e-mails map to the kept customer. Merging is for admins. ⬜ Agents and sales persons: same tools |
+| Duplicate finder | ✅ *Possible duplicates* tab, grouped. Names are compared without legal forms (LLC, CO., SAOC…), "&", punctuation, spaces and plural S, then by trigram similarity (the `pg_trgm` measure; "likely" = 0.75), plus one-letter typos in names of six letters or more. On the 2026 register: 164 groups, 407 customers, e.g. `SYNERGIES CASTING` / `SYNERGIES CASTINGS`, seven spellings of `ADVANCE OILFIELD TECHNOLOGY`. Untick a name that is a different company, or mark a group *Not the same*. Runs in the browser (under 0.1 s for 874 names): the same self-join in Postgres cannot use a trigram index and took 3–6 s |
 | Ports | Port master + normalisation (`NHAVA SHEVA` → `NHAVA-SHEVA INDIA`) |
 | Follow-ups | Quoted > N days without confirmation → reminder list / optional daily e-mail (Supabase scheduled Edge Function); bulk "mark lost" for stale quotes |
 | Commission | Parse `COMMISSION OMR 40/CNTR.` into structured `commission_amount`, `commission_currency`, `commission_per_unit` |

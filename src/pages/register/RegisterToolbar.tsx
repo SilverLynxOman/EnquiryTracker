@@ -1,45 +1,12 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Icon, type IconName } from "../../components/icons";
+import { useEffect, useState } from "react";
+import { Icon } from "../../components/icons";
+import { controlBase, SelectBox } from "../../components/SelectBox";
 import { Menu } from "../../components/Menu";
 import { Button, buttonClass } from "../../components/ui";
 import type { DateBasis } from "../../lib/api";
 import { displayName } from "../../lib/display";
 import { BASIS_LABELS, DEFAULT_VIEW, OPTIONAL_COLUMNS, PERIODS, type ColumnPrefs, type OptionalColumn, type PeriodKey, type RegisterView } from "../../lib/registerView";
 import { MODE_LABELS, SHIPMENT_MODES, type NamedRef, type ShipmentMode } from "../../lib/types";
-
-const controlBase =
-  "h-9 rounded-control border border-control bg-surface text-control font-medium text-ink hover:border-ink-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
-
-function SelectBox({
-  label,
-  icon,
-  value,
-  onChange,
-  children,
-  className = "",
-}: {
-  label: string;
-  icon?: IconName;
-  value: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={`relative flex items-center ${className}`}>
-      <span className="sr-only">{label}</span>
-      {icon && <Icon name={icon} className="pointer-events-none absolute left-2.5 size-4 text-ink-muted" />}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`${controlBase} w-full appearance-none pr-8 ${icon ? "pl-8" : "pl-2.5"}`}
-      >
-        {children}
-      </select>
-      <Icon name="chevronDown" className="pointer-events-none absolute right-2.5 size-4 text-ink-muted" />
-    </label>
-  );
-}
 
 export function RegisterToolbar({
   view,

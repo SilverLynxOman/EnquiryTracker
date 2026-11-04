@@ -4,6 +4,7 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { Layout } from "./components/Layout";
 import { Spinner } from "./components/ui";
 import AccountPage from "./pages/AccountPage";
+import CustomersPage from "./pages/CustomersPage";
 import DashboardPage from "./pages/DashboardPage";
 import EnquiryFormPage from "./pages/EnquiryFormPage";
 import InboxPage from "./pages/InboxPage";
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="enquiries/new" element={<EnquiryFormPage />} />
         <Route path="enquiries/:id" element={<EnquiryFormPage />} />
         <Route path="inbox" element={<InboxPage />} />
+        <Route path="customers" element={<CustomersPage />} />
         <Route
           path="import"
           element={

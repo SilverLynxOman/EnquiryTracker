@@ -37,6 +37,36 @@ export interface NamedRef {
   name: string;
 }
 
+/** Row of the `customer_summary` view: a customer with its counts. */
+export interface CustomerSummary {
+  id: string;
+  name: string;
+  notes: string | null;
+  created_at: string;
+  enquiries: number;
+  confirmed: number;
+  last_enquiry: string | null;
+  contacts: number;
+  /** Former names (normalised keys) that imports and e-mails map to this customer. */
+  aliases: string[];
+}
+
+/** Two customers that staff marked as different companies (customer_a < customer_b). */
+export interface NotDuplicatePair {
+  customer_a: string;
+  customer_b: string;
+  created_at: string;
+}
+
+/** Result of the `merge_customers` RPC. */
+export interface MergeResult {
+  name: string;
+  customers: number;
+  enquiries: number;
+  contacts: number;
+  drafts: number;
+}
+
 export interface Enquiry {
   id: string;
   reference: string;
