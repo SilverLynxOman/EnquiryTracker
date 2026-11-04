@@ -14,10 +14,10 @@ const HEIGHT = 220;
 const M = { top: 22, right: 8, bottom: 28, left: 52 };
 const BAR_MAX = 24;
 const RADIUS = 4;
-const COLOR = "#4f46e5"; // indigo-600, validated against the white card surface
-const COLOR_ACTIVE = "#6366f1"; // indigo-500: the hovered column lifts
-const GRID = "#e2e8f0"; // slate-200
-const AXIS_TEXT = "#64748b"; // slate-500
+const COLOR = "var(--color-primary)"; // 6.2:1 on the white card surface
+const COLOR_ACTIVE = "#7466e4"; // lighter violet (4.3:1): the hovered column lifts
+const GRID = "var(--color-line)";
+const AXIS_TEXT = "var(--color-ink-muted)";
 
 /** Clean tick step (1, 2, 2.5 or 5 × 10^n) for about `count` intervals. */
 function niceStep(range: number, count = 4): number {
@@ -167,11 +167,11 @@ export function MonthlyProfitChart({ data, label }: { data: MonthValue[]; label:
       {activeDatum && (
         <div
           role="tooltip"
-          className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-md"
+          className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-line bg-white px-2.5 py-1.5 text-meta shadow-md"
           style={{ left: tipX, top: tipY, transform: tipAlign }}
         >
-          <div className="text-sm font-semibold tabular-nums text-slate-900">{fmtMoney(activeDatum.value)}</div>
-          <div className="text-slate-500">
+          <div className="text-sm font-semibold tabular-nums text-ink">{fmtMoney(activeDatum.value)}</div>
+          <div className="text-ink-muted">
             {fullMonth(activeDatum.month)}
             {activeDatum.note ? ` · ${activeDatum.note}` : ""}
           </div>

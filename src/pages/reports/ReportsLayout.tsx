@@ -10,14 +10,16 @@ const TABS = [
 ];
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
-  `-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-    isActive ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-600 hover:text-slate-900"
+  `relative flex h-12 items-center px-3 text-body transition-colors duration-150 ${
+    isActive
+      ? "font-semibold text-ink after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
+      : "font-medium text-ink-heading hover:text-ink"
   }`;
 
 export default function ReportsLayout() {
   return (
-    <div className="space-y-4">
-      <nav aria-label="Reports" className="flex flex-wrap gap-1 border-b border-slate-200">
+    <div className="space-y-3">
+      <nav aria-label="Reports" className="flex flex-wrap gap-1 border-b border-line">
         {TABS.map((t) => (
           <NavLink key={t.to} to={t.to} className={tabClass}>
             {t.label}

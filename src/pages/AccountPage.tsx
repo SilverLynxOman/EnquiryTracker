@@ -30,15 +30,15 @@ export default function AccountPage() {
       <Card title="Your account">
         <dl className="space-y-2 text-sm">
           <div>
-            <dt className="text-xs text-slate-500">Name</dt>
+            <dt className="text-meta text-ink-muted">Name</dt>
             <dd>{profile?.full_name ?? "—"}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500">E-mail</dt>
+            <dt className="text-meta text-ink-muted">E-mail</dt>
             <dd>{session?.user.email}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500">Role</dt>
+            <dt className="text-meta text-ink-muted">Role</dt>
             <dd className="capitalize">{profile?.role ?? "—"}</dd>
           </div>
         </dl>

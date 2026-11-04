@@ -1,3 +1,4 @@
+import { displayName } from "../lib/display";
 import { fmtMoney } from "../lib/format";
 import { summaryTotals } from "../lib/reports";
 import type { SalespersonSummaryRow } from "../lib/types";
@@ -8,8 +9,8 @@ export function SalespersonTable({ rows }: { rows: SalespersonSummaryRow[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
-        <thead className="text-xs uppercase text-slate-500">
-          <tr className="border-b border-slate-200 text-right">
+        <thead className="text-meta text-ink-heading font-medium">
+          <tr className="border-b border-line text-right">
             <th className="py-1.5 pr-3 text-left">Person</th>
             <th className="px-2">Inquiries</th>
             <th className="px-2">Confirmed</th>
@@ -27,11 +28,11 @@ export function SalespersonTable({ rows }: { rows: SalespersonSummaryRow[] }) {
         </thead>
         <tbody className="tabular-nums">
           {rows.map((r) => (
-            <tr key={r.sales_person} className="border-b border-slate-100 text-right">
-              <td className="py-1.5 pr-3 text-left">{r.sales_person}</td>
+            <tr key={r.sales_person} className="border-b border-line text-right">
+              <td className="py-1.5 pr-3 text-left">{displayName(r.sales_person)}</td>
               <td className="px-2">{r.total_enquiries}</td>
               <td className="px-2">{r.confirmed}</td>
-              <td className="px-2 text-slate-500">
+              <td className="px-2 text-ink-muted">
                 {r.confirmed_new}+{r.confirmed_old}
               </td>
               <td className="px-2">{r.fcl_jobs || ""}</td>
@@ -49,7 +50,7 @@ export function SalespersonTable({ rows }: { rows: SalespersonSummaryRow[] }) {
             <td className="py-1.5 pr-3 text-left">Total</td>
             <td className="px-2">{totals.total_enquiries}</td>
             <td className="px-2">{totals.confirmed}</td>
-            <td className="px-2 text-slate-500">
+            <td className="px-2 text-ink-muted">
               {totals.confirmed_new}+{totals.confirmed_old}
             </td>
             <td className="px-2">{totals.fcl_jobs}</td>

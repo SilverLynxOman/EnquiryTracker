@@ -1,32 +1,66 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import type { Status } from "../lib/types";
+import { Icon, type IconName } from "./icons";
+
+// Shared building blocks. Tokens (colours, type, radii) live in src/index.css; usage rules in docs/DESIGN.md.
 
 const BUTTON_VARIANTS = {
-  primary: "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 disabled:bg-indigo-300",
-  secondary: "bg-white text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 disabled:text-slate-400",
-  danger: "bg-rose-600 text-white shadow-sm hover:bg-rose-700 disabled:bg-rose-300",
-  ghost: "text-slate-600 hover:bg-slate-100 disabled:text-slate-300",
+  /** One per view: the main action (New enquiry, Save changes, the selected row's next step). */
+  primary: "bg-primary text-white hover:bg-primary-hover disabled:bg-primary/45",
+  /** Routine actions: row next steps, Export, filters. */
+  secondary: "bg-surface text-ink ring-1 ring-inset ring-control hover:bg-row-hover hover:ring-ink-muted disabled:text-ink-muted/60 disabled:ring-line",
+  ghost: "text-ink-heading hover:bg-row-hover hover:text-ink disabled:text-ink-muted/50",
+  danger: "bg-danger text-white hover:bg-danger-hover disabled:bg-danger/45",
 } as const;
+
+export type ButtonVariant = keyof typeof BUTTON_VARIANTS;
+
+export const buttonClass = (variant: ButtonVariant = "primary", size: "sm" | "md" = "md", extra = "") =>
+  `inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control text-control font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
+    size === "sm" ? "h-8 px-2.5" : "h-9 px-3"
+  } ${BUTTON_VARIANTS[variant]} ${extra}`;
 
 export function Button({
   variant = "primary",
   size = "md",
   className = "",
   type = "button",
+  loading = false,
+  disabled,
+  children,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof BUTTON_VARIANTS; size?: "sm" | "md" }) {
-  const sizing = size === "sm" ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm";
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: "sm" | "md"; loading?: boolean }) {
+  return (
+    <button type={type} className={buttonClass(variant, size, className)} disabled={disabled || loading} aria-busy={loading || undefined} {...props}>
+      {loading && <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />}
+      {children}
+    </button>
+  );
+}
+
+/** Square button for an icon alone: at least 32 × 32. Always pass an aria-label. */
+export function IconButton({
+  icon,
+  label,
+  className = "",
+  type = "button",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { icon: IconName; label: string }) {
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition disabled:cursor-not-allowed ${sizing} ${BUTTON_VARIANTS[variant]} ${className}`}
+      aria-label={label}
+      title={label}
+      className={`inline-flex size-8 items-center justify-center rounded-control text-ink-heading transition-colors duration-150 hover:bg-row-hover hover:text-ink disabled:cursor-not-allowed disabled:text-ink-muted/50 ${className}`}
       {...props}
-    />
+    >
+      <Icon name={icon} />
+    </button>
   );
 }
 
 export const inputClass =
-  "block w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-500";
+  "block h-9 w-full rounded-control border border-control bg-surface px-2.5 text-control text-ink placeholder:text-ink-muted hover:border-ink-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:bg-table-head disabled:text-ink-muted";
 
 export function Field({
   label,
@@ -41,9 +75,9 @@ export function Field({
 }) {
   return (
     <div className={className}>
-      <span className="mb-1 block text-xs font-medium text-slate-600">{label}</span>
+      <span className="mb-1 block text-meta font-medium text-ink-heading">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="mt-1 block text-meta text-ink-muted">{hint}</span>}
     </div>
   );
 }
@@ -60,10 +94,10 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>
+    <section className={`rounded-panel border border-line bg-surface ${className}`}>
       {(title || actions) && (
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
+        <header className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2">
+          <h2 className="text-body font-semibold text-ink">{title}</h2>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
@@ -74,49 +108,70 @@ export function Card({
 
 export function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-slate-500">{sub}</div>}
+    <div className="rounded-panel border border-line bg-surface px-4 py-3">
+      <div className="text-meta font-medium text-ink-muted">{label}</div>
+      <div className="mt-1 text-2xl font-semibold text-ink">{value}</div>
+      {sub && <div className="mt-0.5 text-meta text-ink-muted">{sub}</div>}
     </div>
   );
 }
 
-const STATUS_STYLES: Record<Status, string> = {
-  new: "bg-sky-50 text-sky-700 ring-sky-200",
-  quoted: "bg-amber-50 text-amber-800 ring-amber-200",
-  confirmed: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  lost: "bg-rose-50 text-rose-700 ring-rose-200",
-  cancelled: "bg-slate-100 text-slate-600 ring-slate-200",
+export const STATUS_META: Record<Status, { label: string; icon: IconName; badge: string; dot: string }> = {
+  new: { label: "Awaiting quote", icon: "clock", badge: "bg-await-bg text-await", dot: "bg-await-dot" },
+  quoted: { label: "Quoted", icon: "send", badge: "bg-quoted-bg text-quoted", dot: "bg-quoted-dot" },
+  confirmed: { label: "Confirmed", icon: "check", badge: "bg-confirmed-bg text-confirmed", dot: "bg-confirmed-dot" },
+  lost: { label: "Lost", icon: "close", badge: "bg-lost-bg text-lost", dot: "bg-lost-dot" },
+  cancelled: { label: "Cancelled", icon: "ban", badge: "bg-cancelled-bg text-cancelled", dot: "bg-cancelled-dot" },
 };
 
+/** Status as text plus an icon, never colour alone. */
 export function StatusBadge({ status }: { status: Status }) {
+  const m = STATUS_META[status];
   return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${STATUS_STYLES[status]}`}>
-      {status}
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta font-medium whitespace-nowrap ${m.badge}`}>
+      <Icon name={m.icon} className="size-3.5" />
+      {m.label}
     </span>
   );
 }
 
 export function Spinner({ label = "Loading…" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
-      <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />
+    <div role="status" className="flex items-center gap-2 py-6 text-body text-ink-muted">
+      <span className="size-4 animate-spin rounded-full border-2 border-line border-t-primary" aria-hidden="true" />
       {label}
     </div>
   );
 }
 
-export function Alert({ kind = "error", children }: { kind?: "error" | "warning" | "success" | "info"; children: ReactNode }) {
+export function Alert({
+  kind = "error",
+  children,
+  action,
+}: {
+  kind?: "error" | "warning" | "success" | "info";
+  children: ReactNode;
+  action?: ReactNode;
+}) {
   const styles = {
-    error: "border-rose-200 bg-rose-50 text-rose-800",
-    warning: "border-amber-200 bg-amber-50 text-amber-900",
-    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    info: "border-sky-200 bg-sky-50 text-sky-800",
+    error: "border-lost/25 bg-lost-bg text-lost",
+    warning: "border-await/25 bg-await-bg text-await",
+    success: "border-confirmed/25 bg-confirmed-bg text-confirmed",
+    info: "border-primary/20 bg-selected text-ink",
   }[kind];
-  return <div className={`rounded-md border px-3 py-2 text-sm ${styles}`}>{children}</div>;
+  return (
+    <div role={kind === "error" ? "alert" : "status"} className={`flex flex-wrap items-center justify-between gap-2 rounded-control border px-3 py-2 text-body ${styles}`}>
+      <div>{children}</div>
+      {action}
+    </div>
+  );
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <div className="py-8 text-center text-sm text-slate-500">{children}</div>;
+export function Empty({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-10 text-center text-body text-ink-muted">
+      <div>{children}</div>
+      {action}
+    </div>
+  );
 }

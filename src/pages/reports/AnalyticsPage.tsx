@@ -55,7 +55,7 @@ function TrendTable({ rows }: { rows: MonthlyTrendRow[] }) {
       <td className="px-2">{r.quoted.toLocaleString()}</td>
       <td className="px-2">{r.converted.toLocaleString()}</td>
       <td className="px-2">{fmtPercent(r.converted, r.enquiries)}</td>
-      <td className="border-r border-slate-200 px-2">{fmtMoney(r.converted_profit)}</td>
+      <td className="border-r border-line px-2">{fmtMoney(r.converted_profit)}</td>
       <td className="px-2">{r.confirmed.toLocaleString()}</td>
       <td className="px-2">{fmtMoney(r.confirmed_sell)}</td>
       <td className="pl-2">{fmtMoney(r.confirmed_profit)}</td>
@@ -64,23 +64,23 @@ function TrendTable({ rows }: { rows: MonthlyTrendRow[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
-        <thead className="text-xs uppercase text-slate-500">
+        <thead className="text-meta text-ink-heading font-medium">
           <tr className="text-right">
             <th />
-            <th colSpan={5} className="border-r border-slate-200 px-2 pb-1 text-center font-medium normal-case">
+            <th colSpan={5} className="border-r border-line px-2 pb-1 text-center font-medium normal-case">
               Enquiries raised in the month
             </th>
             <th colSpan={3} className="px-2 pb-1 text-center font-medium normal-case">
               Jobs confirmed in the month
             </th>
           </tr>
-          <tr className="border-b border-slate-200 text-right">
+          <tr className="border-b border-line text-right">
             <th className="py-1.5 pr-3 text-left">Month</th>
             <th className="px-2">Enquiries</th>
             <th className="px-2">Quoted</th>
             <th className="px-2">Confirmed</th>
             <th className="px-2">Conv.</th>
-            <th className="border-r border-slate-200 px-2">Profit</th>
+            <th className="border-r border-line px-2">Profit</th>
             <th className="px-2">Jobs</th>
             <th className="px-2">Sales</th>
             <th className="pl-2">Profit</th>
@@ -88,7 +88,7 @@ function TrendTable({ rows }: { rows: MonthlyTrendRow[] }) {
         </thead>
         <tbody className="tabular-nums">
           {rows.map((r) => (
-            <tr key={r.month} className="border-b border-slate-100 text-right">
+            <tr key={r.month} className="border-b border-line text-right">
               <td className="whitespace-nowrap py-1.5 pr-3 text-left">{monthTitle(r.month)}</td>
               {line(r)}
             </tr>
@@ -113,7 +113,7 @@ function BreakdownTable({ rows, dimension }: { rows: BreakdownRow[]; dimension: 
   const shown = showAll ? sorted : sorted.slice(0, TOP);
   const header = (key: SortKey, label: string, className = "px-2") => (
     <th className={className} aria-sort={sort === key ? (key === "label" ? "ascending" : "descending") : undefined}>
-      <button type="button" onClick={() => setSort(key)} className={`uppercase hover:text-slate-900 ${sort === key ? "text-indigo-700" : ""}`}>
+      <button type="button" onClick={() => setSort(key)} className={`hover:text-ink ${sort === key ? "text-primary" : ""}`}>
         {label}
         {sort === key && <span aria-hidden> {key === "label" ? "↑" : "↓"}</span>}
       </button>
@@ -123,22 +123,22 @@ function BreakdownTable({ rows, dimension }: { rows: BreakdownRow[]; dimension: 
     <>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
-          <thead className="text-xs text-slate-500">
-            <tr className="border-b border-slate-200 text-right">
+          <thead className="text-meta text-ink-heading font-medium">
+            <tr className="border-b border-line text-right">
               {header("label", "Name", "py-1.5 pr-3 text-left")}
               {header("enquiries", "Enquiries")}
-              <th className="px-2 uppercase">Quoted</th>
+              <th className="px-2">Quoted</th>
               {header("confirmed", "Confirmed")}
-              <th className="px-2 uppercase">Lost</th>
+              <th className="px-2">Lost</th>
               {header("conversion", "Conv.")}
               {header("sell_total", "Sales")}
               {header("profit", "Profit")}
-              <th className="pl-2 uppercase">Profit / job</th>
+              <th className="pl-2">Profit / job</th>
             </tr>
           </thead>
           <tbody className="tabular-nums">
             {shown.map((r) => (
-              <tr key={r.label} className="border-b border-slate-100 text-right">
+              <tr key={r.label} className="border-b border-line text-right">
                 <td className="max-w-80 truncate py-1.5 pr-3 text-left" title={r.label}>
                   {breakdownLabel(dimension, r.label)}
                 </td>
@@ -261,7 +261,7 @@ export default function AnalyticsPage() {
             <Stat label="Profit" value={fmtMoney(Math.round(totals.confirmed_profit))} sub="on jobs confirmed in the range" />
           </div>
 
-          <Card title="Profit per month" actions={<span className="text-xs text-slate-500">by confirmation date</span>}>
+          <Card title="Profit per month" actions={<span className="text-meta text-ink-muted">by confirmation date</span>}>
             {totals.confirmed === 0 ? (
               <Empty>No confirmed jobs in this range.</Empty>
             ) : (
@@ -290,7 +290,7 @@ export default function AnalyticsPage() {
           </div>
         }
       >
-        <p className="mb-3 text-xs text-slate-500">
+        <p className="mb-3 text-meta text-ink-muted">
           Enquiries raised {fmtDate(from)} – {fmtDate(to)} (cancelled not counted) and what became of them. Sales and profit are for the
           ones now confirmed.
         </p>

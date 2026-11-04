@@ -1,10 +1,93 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/*
+ * Design tokens. The rules for using them are in docs/DESIGN.md: change a value here and every page follows.
+ * Font sizes are rem on a 16px root. Tailwind turns each token into utilities: bg-page, text-ink, text-meta, rounded-control…
+ */
+@theme {
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+
+  /* Type scale: size / line height */
+  --text-app: 1.0625rem; /* 17px: application name */
+  --text-app--line-height: 1.5rem;
+  --text-body: 0.875rem; /* 14px: table content, customer names, navigation, profit */
+  --text-body--line-height: 1.25rem;
+  --text-control: 0.8125rem; /* 13px: buttons, filter controls, references */
+  --text-control--line-height: 1.25rem;
+  --text-meta: 0.8125rem; /* 13px: dates, routes, agents, column headings, status labels, counts */
+  --text-meta--line-height: 1.125rem;
+  --text-title: 1rem; /* 16px: drawer and panel titles */
+  --text-title--line-height: 1.5rem;
+
+  /* Surfaces and text */
+  --color-page: #f7f8fb;
+  --color-surface: #ffffff;
+  --color-ink: #19243b;
+  --color-ink-muted: #526075;
+  --color-ink-heading: #344056;
+  --color-line: #e2e6ef; /* decorative borders and row dividers */
+  --color-control: #7c8798; /* outlines that must stay visible (inputs, outline buttons) */
+  --color-table-head: #f5f6fa;
+  --color-row-hover: #f6f8fc;
+
+  /* Primary violet: primary actions, active navigation, links, selection */
+  --color-primary: #5546d9;
+  --color-primary-hover: #4435bc;
+  --color-selected: #f1eeff;
+  --color-focus: #5546d9;
+
+  /* Status: text/icon on background */
+  --color-await: #92400e;
+  --color-await-bg: #fffbeb;
+  --color-quoted: #5b21b6;
+  --color-quoted-bg: #f3e8ff;
+  --color-confirmed: #166534;
+  --color-confirmed-bg: #f0fdf4;
+  --color-lost: #991b1b;
+  --color-lost-bg: #fef2f2;
+  --color-cancelled: #526075;
+  --color-cancelled-bg: #f1f3f7;
+  /* Small decorative dots beside the status tab labels */
+  --color-await-dot: #d97706;
+  --color-quoted-dot: #5546d9;
+  --color-confirmed-dot: #16a34a;
+  --color-lost-dot: #dc2626;
+  --color-cancelled-dot: #8a94a6;
+  --color-danger: #b42318;
+  --color-danger-hover: #912018;
+
+  /* Shape */
+  --radius-control: 6px;
+  --radius-panel: 10px;
+}
 
 @layer base {
   html {
     color-scheme: light;
   }
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-page font-sans text-body text-ink antialiased;
+  }
+  /* One visible focus indicator everywhere, for keyboard users only. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

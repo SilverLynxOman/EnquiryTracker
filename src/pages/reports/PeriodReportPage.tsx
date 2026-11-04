@@ -108,7 +108,7 @@ function PeriodPicker({ period, onChange }: { period: Period; onChange: (p: Peri
       <Button variant="ghost" onClick={() => onChange(w.of(todayIso()))}>
         {w.current}
       </Button>
-      {kind === "weekly" && <span className="pb-1.5 text-xs text-slate-500">Weeks run Saturday to Friday.</span>}
+      {kind === "weekly" && <span className="pb-1.5 text-meta text-ink-muted">Weeks run Saturday to Friday.</span>}
     </div>
   );
 }
@@ -121,8 +121,8 @@ function ModeTable({ modes }: { modes: ModeTotal[] }) {
   );
   return (
     <table className="min-w-full text-sm">
-      <thead className="text-xs uppercase text-slate-500">
-        <tr className="border-b border-slate-200 text-right">
+      <thead className="text-meta text-ink-heading font-medium">
+        <tr className="border-b border-line text-right">
           <th className="py-1.5 pr-3 text-left">Mode</th>
           <th className="px-2">Inquiries</th>
           <th className="px-2">Confirmed</th>
@@ -132,7 +132,7 @@ function ModeTable({ modes }: { modes: ModeTotal[] }) {
       </thead>
       <tbody className="tabular-nums">
         {modes.map((m) => (
-          <tr key={m.mode} className="border-b border-slate-100 text-right">
+          <tr key={m.mode} className="border-b border-line text-right">
             <td className="py-1.5 pr-3 text-left">{MODE_LABELS[m.mode]}</td>
             <td className="px-2">{m.enquiries}</td>
             <td className="px-2">{m.confirmed}</td>
@@ -252,7 +252,7 @@ export default function PeriodReportPage({ kind }: { kind: PeriodKind }) {
             title={
               <>
                 Earlier enquiries confirmed {w.within} ({report.earlier.length})
-                <span className="ml-2 text-xs font-normal text-slate-500">“{EARLIER_SECTION_TITLE[kind]}” in the Excel export</span>
+                <span className="ml-2 text-meta font-normal text-ink-muted">“{EARLIER_SECTION_TITLE[kind]}” in the Excel export</span>
               </>
             }
           >

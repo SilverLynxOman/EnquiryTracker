@@ -69,8 +69,11 @@ export interface RegisterFilters {
   q: string;
 }
 
-function registerQuery(f: RegisterFilters, withCount: boolean) {
-  let q = supabase.from("enquiry_register").select("*", withCount ? { count: "exact" } : undefined);
+export type SortDirection = "asc" | "desc";
+
+/** The register's filters on one select. Counts and pages share it, so tab counts always match the table. */
+function filtered(f: RegisterFilters, columns: string, options?: { count: "exact"; head?: boolean }) {
+  let q = supabase.from("enquiry_register").select(columns, options);
   if (f.from) q = q.gte(f.basis, f.from);
   if (f.to) q = q.lte(f.basis, f.to);
   if (f.status) q = q.eq("status", f.status);
@@ -84,18 +87,42 @@ function registerQuery(f: RegisterFilters, withCount: boolean) {
         .join(","),
     );
   }
-  return q.order(f.basis, { ascending: false, nullsFirst: false }).order("reference", { ascending: false });
+  return q;
 }
 
-export async function queryRegister(f: RegisterFilters, page: number, pageSize: number) {
+/** Newest enquiry first by default; the reference breaks ties within a day. */
+function registerQuery(f: RegisterFilters, withCount: boolean, sort: SortDirection = "desc") {
+  const ascending = sort === "asc";
+  return filtered(f, "*", withCount ? { count: "exact" } : undefined)
+    .order("enquiry_date", { ascending })
+    .order("reference", { ascending });
+}
+
+export async function queryRegister(f: RegisterFilters, page: number, pageSize: number, sort: SortDirection = "desc") {
   const from = page * pageSize;
-  const { data, error, count } = await registerQuery(f, true).range(from, from + pageSize - 1);
+  const { data, error, count } = await registerQuery(f, true, sort).range(from, from + pageSize - 1);
   if (error) throw new Error(error.message);
-  return { rows: (data ?? []) as EnquiryRow[], count: count ?? 0 };
+  return { rows: (data ?? []) as unknown as EnquiryRow[], count: count ?? 0 };
 }
 
-export function fetchRegisterAll(f: RegisterFilters): Promise<EnquiryRow[]> {
-  return fetchAllPages<EnquiryRow>((from, to) => registerQuery(f, false).range(from, to));
+export function fetchRegisterAll(f: RegisterFilters, sort: SortDirection = "desc"): Promise<EnquiryRow[]> {
+  return fetchAllPages<EnquiryRow>((from, to) => registerQuery(f, false, sort).range(from, to));
+}
+
+export type StatusCounts = Record<Status | "all", number>;
+
+/** Number of enquiries per status under the other filters (the status filter itself is ignored). */
+export async function fetchStatusCounts(f: RegisterFilters): Promise<StatusCounts> {
+  const keys = ["all", "new", "quoted", "confirmed", "lost", "cancelled"] as const;
+  const results = await Promise.all(
+    keys.map((k) => filtered({ ...f, status: k === "all" ? "" : k }, "id", { count: "exact", head: true })),
+  );
+  const out = {} as StatusCounts;
+  results.forEach(({ count, error }, i) => {
+    if (error) throw new Error(error.message);
+    out[keys[i]] = count ?? 0;
+  });
+  return out;
 }
 
 export async function fetchFollowUps(status: "new" | "quoted", since: string, limit = 10) {

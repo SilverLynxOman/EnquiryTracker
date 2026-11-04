@@ -3,13 +3,14 @@ import { Link } from "react-router";
 import { SalespersonTable } from "../components/SalespersonTable";
 import { Alert, Card, Empty, Spinner, Stat } from "../components/ui";
 import { fetchFollowUps, fetchPeriodStats, fetchSalespersonSummary } from "../lib/api";
+import { displayName } from "../lib/display";
 import { addDays, errorMessage, firstOfMonth, fmtDate, fmtMoney, fmtPercent, todayIso } from "../lib/format";
 import type { EnquiryRow, PeriodStats } from "../lib/types";
 
 function StatsRow({ title, stats }: { title: string; stats: PeriodStats | undefined }) {
   return (
     <div>
-      <h2 className="mb-2 text-sm font-semibold text-slate-700">{title}</h2>
+      <h2 className="mb-2 text-sm font-semibold text-ink-heading">{title}</h2>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Enquiries" value={stats?.enquiries ?? "—"} />
         <Stat label="Quoted" value={stats?.quoted ?? "—"} />
@@ -31,14 +32,14 @@ function FollowUpList({ title, rows, count, dateOf }: { title: string; rows: Enq
       {rows.length === 0 ? (
         <Empty>Nothing waiting.</Empty>
       ) : (
-        <ul className="divide-y divide-slate-100 text-sm">
+        <ul className="divide-y divide-line text-sm">
           {rows.map((r) => (
             <li key={r.id}>
-              <Link to={`/enquiries/${r.id}`} className="flex items-baseline gap-3 py-1.5 hover:bg-slate-50">
-                <span className="w-20 shrink-0 font-mono text-xs text-slate-500">{r.reference}</span>
-                <span className="min-w-0 flex-1 truncate">{r.customer_name}</span>
-                <span className="shrink-0 text-xs text-slate-500">{r.sales_person_name}</span>
-                <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-500">{fmtDate(dateOf(r))}</span>
+              <Link to={`/enquiries/${r.id}`} className="flex items-baseline gap-3 py-1.5 hover:bg-row-hover">
+                <span className="w-20 shrink-0 text-control font-semibold tabular-nums text-primary">{r.reference}</span>
+                <span className="min-w-0 flex-1 truncate">{displayName(r.customer_name)}</span>
+                <span className="shrink-0 text-meta text-ink-muted">{displayName(r.sales_person_name)}</span>
+                <span className="w-20 shrink-0 text-right text-meta tabular-nums text-ink-muted">{fmtDate(dateOf(r))}</span>
               </Link>
             </li>
           ))}
