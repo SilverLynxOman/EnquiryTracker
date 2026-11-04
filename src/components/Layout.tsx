@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet } from "react-router";
+import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { Alert } from "./ui";
 
@@ -6,7 +6,11 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-md px-3 py-1.5 text-sm font-medium ${isActive ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-100"}`;
 
 export function Layout() {
-  const { profile, session, canEdit, signOut } = useAuth();
+  const { profile, session, canEdit, mustSetPassword, signOut } = useAuth();
+  const location = useLocation();
+
+  // Arrived from an invite or reset e-mail: choose a password before anything else.
+  if (mustSetPassword && location.pathname !== "/account") return <Navigate to="/account" replace />;
 
   return (
     <div className="min-h-screen">
@@ -35,7 +39,8 @@ export function Layout() {
             )}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
-            <NavLink to="/account" className="text-slate-600 hover:text-slate-900">
+            <NavLink to="/account" className="text-slate-600 hover:text-slate-900" title="Account and password">
+              <span className="mr-1.5 font-medium text-indigo-700">Account</span>
               {profile?.full_name ?? session?.user.email}
               {profile && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{profile.role}</span>}
             </NavLink>

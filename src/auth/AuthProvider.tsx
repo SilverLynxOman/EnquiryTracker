@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { clearNeedsPassword, markNeedsPassword, needsPassword, supabase } from "../lib/supabase";
 import type { Profile } from "../lib/types";
 
 interface AuthState {
@@ -9,6 +9,9 @@ interface AuthState {
   loading: boolean;
   canEdit: boolean;
   isAdmin: boolean;
+  /** Signed in from an invite or reset link and has not chosen a password yet. */
+  mustSetPassword: boolean;
+  passwordSet: () => void;
   signOut: () => Promise<void>;
 }
 
@@ -18,6 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mustSetPassword, setMustSetPassword] = useState(needsPassword);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -25,7 +29,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
     // Only set state here: calling Supabase inside this callback can deadlock the auth client.
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    const { data } = supabase.auth.onAuthStateChange((event, next) => {
+      if (event === "PASSWORD_RECOVERY") {
+        markNeedsPassword();
+        setMustSetPassword(true);
+      }
+      if (event === "SIGNED_OUT") {
+        clearNeedsPassword();
+        setMustSetPassword(false);
+      }
+      setSession(next);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -55,6 +69,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     canEdit: profile?.role === "admin" || profile?.role === "editor",
     isAdmin: profile?.role === "admin",
+    mustSetPassword: mustSetPassword && session !== null,
+    passwordSet: () => {
+      clearNeedsPassword();
+      setMustSetPassword(false);
+    },
     signOut: async () => {
       await supabase.auth.signOut();
     },
