@@ -1,14 +1,14 @@
 // gmail-sync: reads new mail of the pricing mailbox and files it in the enquiry tracker.
 //
-// Called every few minutes by pg_cron (supabase/email_sync_schedule.sql) with
-// "Authorization: Bearer <EMAIL_SYNC_SECRET>", and on demand by an editor's "Check mail now" button
-// (their own session token). Deploy with --no-verify-jwt: this function checks both itself.
+// Called every few minutes by pg_cron (supabase/email_sync_schedule.sql) with the random secret kept in
+// Vault as gmail_sync_secret, and on demand by an editor's "Check mail now" button (their own session
+// token). Deploy with --no-verify-jwt: this function checks both itself.
 //
-// Secrets (npx supabase secrets set NAME=value):
-//   GMAIL_MAILBOX            pricing@silverlynxoman.com
+// Secrets (Supabase dashboard → Edge Functions → Secrets, or npx supabase secrets set NAME=value):
 //   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN   OAuth client + refresh token (gmail.readonly)
-//   EMAIL_SYNC_SECRET        long random string, also stored in Vault for the cron job
 //   ANTHROPIC_API_KEY        without it, e-mails that need Claude go to "review"
+//   GMAIL_MAILBOX            optional, default the first active row of public.mailboxes
+//   EMAIL_SYNC_SECRET        optional, accepted in addition to the Vault secret
 //   ANTHROPIC_MODEL          optional, default claude-opus-5-5
 //   ANTHROPIC_EFFORT         optional, default low
 //   INTERNAL_EMAIL_DOMAINS   optional, comma separated, default the mailbox's domain
@@ -33,7 +33,7 @@ function json(body: unknown, status = 200): Response {
 
 function env(name: string, fallback?: string): string {
   const v = Deno.env.get(name)?.trim() || fallback;
-  if (!v) throw new Error(`Missing secret ${name}`);
+  if (!v) throw new Error(`Missing secret ${name}: add it in the Supabase dashboard under Edge Functions → Secrets`);
   return v;
 }
 
@@ -50,6 +50,11 @@ async function authorise(req: Request, admin: SupabaseClient): Promise<[number, 
   if (!token) return [401, "Missing Authorization header"];
   const secret = Deno.env.get("EMAIL_SYNC_SECRET")?.trim();
   if (secret && sameSecret(token, secret)) return null;
+  // The scheduled job sends the secret stored in Vault; JWTs never match it.
+  if (!token.startsWith("eyJ")) {
+    const { data } = await admin.rpc("email_sync_secret_ok", { p_token: token });
+    return data === true ? null : [401, "Invalid sync secret"];
+  }
 
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) return [401, "Not signed in"];
@@ -60,6 +65,15 @@ async function authorise(req: Request, admin: SupabaseClient): Promise<[number, 
 function unwrap<T>({ data, error }: { data: T; error: { message: string } | null }, what: string): T {
   if (error) throw new Error(`${what}: ${error.message}`);
   return data;
+}
+
+async function mailboxAddress(admin: SupabaseClient): Promise<string> {
+  const fromSecret = Deno.env.get("GMAIL_MAILBOX")?.trim().toLowerCase();
+  if (fromSecret) return fromSecret;
+  const { data, error } = await admin.from("mailboxes").select("email").eq("active", true).order("created_at").limit(1).maybeSingle();
+  if (error) throw new Error(`mailboxes: ${error.message}`);
+  if (!data) throw new Error("No mailbox configured: add a row to public.mailboxes or set the GMAIL_MAILBOX secret");
+  return data.email as string;
 }
 
 function database(admin: SupabaseClient): SyncDb {
@@ -109,21 +123,24 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
 
+  let admin: SupabaseClient | null = null;
+  let mailbox: string | null = null;
+  let syncing = false;
   try {
-    const admin = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), {
+    admin = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const denied = await authorise(req, admin);
     if (denied) return json({ error: denied[1] }, denied[0]);
 
-    const mailbox = env("GMAIL_MAILBOX").toLowerCase();
+    mailbox = await mailboxAddress(admin);
     const domains = env("INTERNAL_EMAIL_DOMAINS", mailbox.split("@")[1])
       .split(",")
       .map((d) => d.trim().toLowerCase())
       .filter(Boolean);
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim();
 
-    const stats = await runSync({
+    const deps = {
       options: {
         ...DEFAULT_OPTIONS,
         mailbox,
@@ -146,12 +163,15 @@ Deno.serve(async (req) => {
             mailbox,
           })
         : null,
-      log: (m) => console.log(m),
-    });
-    return json(stats);
+      log: (m: string) => console.log(m),
+    };
+    syncing = true; // from here on runSync records its own errors on the mailbox
+    return json(await runSync(deps));
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error(`gmail-sync failed: ${message}`);
+    // Setup problems (e.g. a missing Google secret) are shown on the Inbox page.
+    if (admin && mailbox && !syncing) await admin.from("mailboxes").update({ last_error: message }).eq("email", mailbox);
     return json({ error: message }, 500);
   }
 });

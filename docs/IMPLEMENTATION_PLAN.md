@@ -155,7 +155,7 @@ Design choices:
 
 RPC functions: `upsert_enquiry` (manual save), `import_enquiries` (batch upsert), `dashboard_stats`, `salesperson_summary` (the weekly `DATA` sheet), `resolve_customer` / `resolve_agent` / `resolve_sales_person`.
 
-E-mail intake (`supabase/migrations/20261104200000_email_intake.sql`):
+E-mail intake (`supabase/migrations/20261104202737_email_intake.sql`):
 
 | Table | Purpose |
 |---|---|
@@ -266,7 +266,7 @@ Dry run of the importer on the real workbooks (`npm run check-workbook -- <file>
 | Cut-over | Freeze the Excel workbook (read-only archive), app becomes the system of record |
 
 ### Phase 7 — E-mail intake (2–3 days + setup) 🟡
-Code written and tested (2026-11-04): migration applied and exercised end to end on a local Postgres with the Supabase schema stubbed (new enquiry → draft → one-click create; reference follow-ups; waiting references linked by an Excel import; automatic merge of a draft that staff created by hand; delete; RLS for anon / viewer / editor / service role). The Edge Function type-checks with Deno. Parsing, decisions and the sync run have 40 unit tests. The UI was clicked through against a mocked backend. Not yet done: the Google OAuth client, the secrets, deployment and the cron job (README, "E-mail intake"), and a first live run against the mailbox.
+Code written and tested (2026-11-04): migration applied and exercised end to end on a local Postgres with the Supabase schema stubbed (new enquiry → draft → one-click create; reference follow-ups; waiting references linked by an Excel import; automatic merge of a draft that staff created by hand; delete; RLS for anon / viewer / editor / service role). The Edge Function type-checks with Deno. Parsing, decisions and the sync run have 40 unit tests. The UI was clicked through against a mocked backend. Live setup done the same day: migration applied to `Enquiry_Tracker` (schema verified identical to the tested one), function deployed, mailbox registered, 5-minute pg_cron job running with its secret in Vault (wrong secrets are refused). Not yet done: the Google OAuth client and the Claude API key (README, "E-mail intake"), then a first live run against the mailbox; the Inbox screens go live when this branch is merged.
 
 | Task | Detail |
 |---|---|

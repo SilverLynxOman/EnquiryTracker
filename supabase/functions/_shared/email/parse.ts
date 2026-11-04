@@ -133,8 +133,8 @@ export function htmlToText(html: string): string {
       if (k.startsWith("#") && k !== "#39") return String.fromCodePoint(parseInt(k.slice(1), 10));
       return ENTITIES[k] ?? m;
     })
-    .replace(/[ \t ]+\n/g, "\n")
-    .replace(/[ \t ]{2,}/g, " ")
+    .replace(/[ \t\u00a0]+\n/g, "\n")
+    .replace(/[ \t\u00a0]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

@@ -277,7 +277,8 @@ $$;
 -- Mailboxes, drafts, messages
 -------------------------------------------------------------------------------
 
--- One row per watched mailbox (created by the sync on its first run). Holds the sync checkpoint.
+-- One row per watched mailbox. Holds the sync checkpoint. The sync reads the first active row unless the
+-- GMAIL_MAILBOX secret names another address (which is then added on its first run).
 create table public.mailboxes (
   id uuid primary key default gen_random_uuid(),
   email text not null unique check (email = lower(email)),
@@ -472,6 +473,19 @@ $$;
 -- What the database knows about a message before it is classified. Input keys: gmail_message_id,
 -- gmail_thread_id, in_reply_to, reference_ids[], sl_refs[] (subject first), customer_email (external
 -- sender or null), participants[] (all addresses on the message).
+-- The scheduled job authenticates with a random secret kept in Vault (supabase/email_sync_schedule.sql),
+-- so the secret exists in one place only and never has to be copied into the function's settings.
+create or replace function public.email_sync_secret_ok(p_token text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(length(p_token) >= 32, false)
+     and exists (select 1 from vault.decrypted_secrets where name = 'gmail_sync_secret' and decrypted_secret = p_token)
+$$;
+
 create or replace function public.email_match_context(p jsonb)
 returns jsonb
 language plpgsql
@@ -1101,12 +1115,14 @@ to authenticated;
 revoke execute on function
   public.begin_mailbox_sync(text, integer, timestamptz),
   public.end_mailbox_sync(text, timestamptz, text, jsonb),
+  public.email_sync_secret_ok(text),
   public.email_match_context(jsonb),
   public.ingest_email(jsonb)
 from public, anon, authenticated;
 grant execute on function
   public.begin_mailbox_sync(text, integer, timestamptz),
   public.end_mailbox_sync(text, timestamptz, text, jsonb),
+  public.email_sync_secret_ok(text),
   public.email_match_context(jsonb),
   public.ingest_email(jsonb)
 to service_role;

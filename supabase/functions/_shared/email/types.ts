@@ -1,5 +1,5 @@
 // Types shared by the gmail-sync Edge Function and its tests. Plain TypeScript, no Deno or Node APIs.
-// The database side of these shapes is supabase/migrations/20261104200000_email_intake.sql.
+// The database side of these shapes is supabase/migrations/20261104202737_email_intake.sql.
 
 export type SenderType = "external" | "staff" | "self";
 export type EmailStatus = "linked" | "draft" | "awaiting_enquiry" | "review" | "ignored";

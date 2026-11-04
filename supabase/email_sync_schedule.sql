@@ -1,21 +1,25 @@
--- Runs the gmail-sync Edge Function every 5 minutes (README, "E-mail intake", step 6).
--- Not a migration: it needs the project URL and the EMAIL_SYNC_SECRET. Run it once in the SQL editor
--- after replacing <EMAIL_SYNC_SECRET> with the same value you gave `supabase secrets set`.
+-- Runs the gmail-sync Edge Function every 5 minutes (README, "E-mail intake", step 5).
+-- Not a migration (it is project configuration). Run it once in the SQL editor; it is safe to run again.
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
--- 1. Keep the URL and the secret in Vault, not in the job text.
-select vault.create_secret('https://jaaueukrzijesejjaplt.supabase.co/functions/v1/gmail-sync', 'gmail_sync_url');
-select vault.create_secret('<EMAIL_SYNC_SECRET>', 'gmail_sync_secret');
+-- 1. The mailbox to read (the function uses the first active row).
+insert into public.mailboxes (email) values ('pricing@silverlynxoman.com') on conflict (email) do nothing;
 
--- 2. Every 5 minutes. A run takes a lease on the mailbox, so a slow run is never overlapped.
+-- 2. A random secret for the job, generated and kept in Vault. The function checks calls against it
+--    (public.email_sync_secret_ok), so it never has to be copied anywhere.
+select vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), 'gmail_sync_secret',
+                           'Authorises the gmail-sync cron job')
+ where not exists (select 1 from vault.secrets where name = 'gmail_sync_secret');
+
+-- 3. Every 5 minutes. A run takes a lease on the mailbox, so a slow run is never overlapped.
 select cron.schedule(
   'gmail-sync',
   '*/5 * * * *',
   $$
   select net.http_post(
-    url := (select decrypted_secret from vault.decrypted_secrets where name = 'gmail_sync_url'),
+    url := 'https://jaaueukrzijesejjaplt.supabase.co/functions/v1/gmail-sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'gmail_sync_secret')

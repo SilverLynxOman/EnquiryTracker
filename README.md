@@ -179,38 +179,30 @@ Do the historical Excel import first, so that references in old conversations ma
 
 ### Setup
 
+Already done on the `Enquiry_Tracker` project (4 Nov 2026): the migration (`20261104202737_email_intake.sql`) is applied, the `gmail-sync` function is deployed, the mailbox `pricing@silverlynxoman.com` is registered and the 5-minute job is scheduled with its secret in Vault. Until the keys below are added, each run stops with "Missing secret GOOGLE_CLIENT_ID", shown on the Inbox page.
+
+What is left needs a browser:
+
 1. **Gmail access** (Google Workspace admin, once):
    1. In [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Gmail API**.
    2. *Google Auth Platform → Branding / Audience*: user type **Internal**. Internal apps keep their refresh token; external apps in testing lose it after 7 days. Under *Data access* add the scope `https://www.googleapis.com/auth/gmail.readonly`.
    3. *Clients → Create client → Web application*, with the authorised redirect URI `https://developers.google.com/oauthplayground`. Copy the client ID and secret.
    4. Open the [OAuth Playground](https://developers.google.com/oauthplayground). Under ⚙ tick *Use your own OAuth credentials* and paste the client ID and secret. In step 1 enter the scope `https://www.googleapis.com/auth/gmail.readonly`, click *Authorize APIs* and sign in **as pricing@silverlynxoman.com**. In step 2 click *Exchange authorization code for tokens* and copy the **refresh token**.
 2. **Claude**: create an API key in the [Claude Console](https://platform.claude.com/). Without a key, mail that needs reading goes to *Needs review*.
-3. **Database**: apply the new migration (`20261104200000_email_intake.sql`):
+3. **Secrets**: in the Supabase dashboard, *Edge Functions → Secrets*, add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` and `ANTHROPIC_API_KEY`. The next run (within 5 minutes) reads the last 24 hours of mail.
 
-   ```bash
-   npx supabase db push
-   ```
+Optional secrets: `ANTHROPIC_MODEL` (default `claude-opus-5-5`), `ANTHROPIC_EFFORT` (default `low`), `INTERNAL_EMAIL_DOMAINS` (default `silverlynxoman.com`), `SYNC_LOOKBACK_HOURS` (first run, default `24`), `GMAIL_MAILBOX` (default: the first active row of `public.mailboxes`).
 
-4. **Secrets**. First make a random sync secret:
+To set it up on another project:
 
-   ```bash
-   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-   ```
+```bash
+npx supabase db push
+```
 
-   Then store everything for the function:
+```bash
+npx supabase functions deploy gmail-sync --no-verify-jwt
+```
 
-   ```bash
-   npx supabase secrets set GMAIL_MAILBOX=pricing@silverlynxoman.com GOOGLE_CLIENT_ID=<client id> GOOGLE_CLIENT_SECRET=<client secret> GOOGLE_REFRESH_TOKEN=<refresh token> ANTHROPIC_API_KEY=<api key> EMAIL_SYNC_SECRET=<random secret>
-   ```
+Then run `supabase/email_sync_schedule.sql` in the SQL editor (mailbox, Vault secret, 5-minute job; it also has queries to check and stop the job) and add the secrets above. If the deploy asks for Docker, add `--use-api`.
 
-   Optional: `ANTHROPIC_MODEL` (default `claude-opus-5-5`), `ANTHROPIC_EFFORT` (default `low`), `INTERNAL_EMAIL_DOMAINS` (default `silverlynxoman.com`), `SYNC_LOOKBACK_HOURS` (first run, default `24`).
-5. **Deploy** the function. It checks its callers itself, so JWT verification is off:
-
-   ```bash
-   npx supabase functions deploy gmail-sync --no-verify-jwt
-   ```
-
-   If the CLI asks for Docker, add `--use-api`. Then sign in as an editor, open **Inbox** and click **Check mail now**.
-6. **Schedule**: put the sync secret into `supabase/email_sync_schedule.sql` and run that file in the Supabase SQL editor. It calls the function every 5 minutes. The file also has queries to check and stop the job.
-
-The status line on the Inbox page shows when the mailbox was last read and the last error, if any.
+The status line on the Inbox page shows when the mailbox was last read and the last error, if any. Editors can also click **Check mail now**.

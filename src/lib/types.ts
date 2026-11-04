@@ -170,7 +170,7 @@ export interface SalespersonSummaryRow {
   profit: number;
 }
 
-// --- E-mail intake (supabase/migrations/20261104200000_email_intake.sql) ----------------
+// --- E-mail intake (supabase/migrations/20261104202737_email_intake.sql) ----------------
 
 export type EmailStatus = "linked" | "draft" | "awaiting_enquiry" | "review" | "ignored";
 export type DraftStatus = "pending" | "created" | "merged" | "dismissed";
