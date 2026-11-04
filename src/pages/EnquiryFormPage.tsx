@@ -2,8 +2,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
+import { EmailView } from "../components/EmailView";
 import { Alert, Button, Card, Field, Spinner, StatusBadge, inputClass } from "../components/ui";
-import { deleteEnquiry, fetchAudit, fetchEnquiry, fetchNames, fetchProfileNames, fetchSalesPersons, saveEnquiry } from "../lib/api";
+import {
+  createEnquiryFromDraft,
+  deleteEnquiry,
+  fetchAudit,
+  fetchDraft,
+  fetchEnquiry,
+  fetchEnquiryEmails,
+  fetchInboxCounts,
+  fetchNames,
+  fetchProfileNames,
+  fetchSalesPersons,
+  saveEnquiry,
+} from "../lib/api";
+import { draftToPayload } from "../lib/emailDrafts";
 import { errorMessage, fmtDate, fmtDateTime, fmtMoney, todayIso } from "../lib/format";
 import { parseQty, round2 } from "../lib/normalize";
 import {
@@ -42,6 +56,10 @@ interface FormState {
   agent_name: string;
   subject: string;
   remarks: string;
+  contact_name: string;
+  contact_email: string;
+  contact_phone: string;
+  requirements: string;
 }
 
 type Key = keyof FormState;
@@ -76,6 +94,10 @@ function emptyForm(): FormState {
     agent_name: "",
     subject: "",
     remarks: "",
+    contact_name: "",
+    contact_email: "",
+    contact_phone: "",
+    requirements: "",
   };
 }
 
@@ -104,6 +126,32 @@ function toForm(e: EnquiryRow): FormState {
     agent_name: s(e.agent_name),
     subject: s(e.subject),
     remarks: s(e.remarks),
+    contact_name: s(e.contact_name),
+    contact_email: s(e.contact_email),
+    contact_phone: s(e.contact_phone),
+    requirements: s(e.requirements),
+  };
+}
+
+/** Form pre-filled from an e-mail enquiry (see src/lib/emailDrafts.ts). */
+function payloadToForm(p: EnquiryPayload): FormState {
+  return {
+    ...emptyForm(),
+    enquiry_date: p.enquiry_date,
+    customer_name: p.customer_name,
+    sales_person_name: s(p.sales_person_name),
+    trade_type: s(p.trade_type),
+    qty_text: s(p.qty_text),
+    shipment_mode: s(p.shipment_mode),
+    units: s(p.units),
+    container_type: s(p.container_type),
+    pol: s(p.pol),
+    pod: s(p.pod),
+    subject: s(p.subject),
+    contact_name: s(p.contact_name),
+    contact_email: s(p.contact_email),
+    contact_phone: s(p.contact_phone),
+    requirements: s(p.requirements),
   };
 }
 
@@ -135,6 +183,10 @@ function toPayload(f: FormState): EnquiryPayload {
     agent_name: textOrNull(f.agent_name),
     sales_person_name: textOrNull(f.sales_person_name),
     remarks: textOrNull(f.remarks),
+    contact_name: textOrNull(f.contact_name),
+    contact_email: textOrNull(f.contact_email)?.toLowerCase() ?? null,
+    contact_phone: textOrNull(f.contact_phone),
+    requirements: textOrNull(f.requirements),
   };
 }
 
@@ -162,15 +214,18 @@ function checkForm(f: FormState) {
   if (f.confirmed_date && !f.sell_total) warnings.push("Confirmed without a sell amount — profit will be missing from reports.");
   if (f.confirmed_date && f.closure) warnings.push(`A confirmed enquiry is marked ${f.closure}; reports will treat it as ${f.closure === "cancelled" ? "cancelled" : "confirmed"}.`);
   if (!f.sales_person_name) warnings.push("No sales person selected.");
+  if (f.contact_email.trim() && !/^[^@\s]+@[^@\s]+$/.test(f.contact_email.trim())) errors.push("The contact e-mail address is not valid.");
   return { errors, warnings };
 }
 
 export default function EnquiryFormPage() {
   const { id } = useParams();
-  return <EnquiryForm key={id ?? "new"} id={id ?? null} />;
+  const [searchParams] = useSearchParams();
+  const draftId = id ? null : searchParams.get("draft");
+  return <EnquiryForm key={id ?? `new-${draftId ?? ""}`} id={id ?? null} draftId={draftId} />;
 }
 
-function EnquiryForm({ id }: { id: string | null }) {
+function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | null }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -178,12 +233,13 @@ function EnquiryForm({ id }: { id: string | null }) {
   const queryClient = useQueryClient();
 
   const existing = useQuery({ queryKey: ["enquiry", id], queryFn: () => fetchEnquiry(id!), enabled: !!id });
+  const draft = useQuery({ queryKey: ["inbox", "draft", draftId], queryFn: () => fetchDraft(draftId!), enabled: !!draftId });
   const salesPersons = useQuery({ queryKey: ["sales-persons"], queryFn: fetchSalesPersons, staleTime: 300_000 });
   const customers = useQuery({ queryKey: ["names", "customers"], queryFn: () => fetchNames("customers"), staleTime: 300_000 });
   const agents = useQuery({ queryKey: ["names", "agents"], queryFn: () => fetchNames("agents"), staleTime: 300_000 });
 
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [loaded, setLoaded] = useState(!id);
+  const [loaded, setLoaded] = useState(!id && !draftId);
   const [autoBuy, setAutoBuy] = useState(true);
   const [autoSell, setAutoSell] = useState(true);
   const savedReference = (location.state as { saved?: string } | null)?.saved;
@@ -200,6 +256,12 @@ function EnquiryForm({ id }: { id: string | null }) {
     setAutoSell(totalIsAuto(e.sell_rate, e.units, e.sell_total));
     setLoaded(true);
   }, [existing.data, loaded, searchParams]);
+
+  useEffect(() => {
+    if (!draft.data || loaded) return;
+    setForm(payloadToForm(draftToPayload(draft.data)));
+    setLoaded(true);
+  }, [draft.data, loaded]);
 
   function set(key: Key, raw: string) {
     const value = UPPERCASE_FIELDS.includes(key) ? raw.toUpperCase() : raw;
@@ -230,8 +292,10 @@ function EnquiryForm({ id }: { id: string | null }) {
   }
 
   const save = useMutation({
-    mutationFn: () => saveEnquiry(id, toPayload(form)),
+    mutationFn: () => (draftId ? createEnquiryFromDraft(draftId, toPayload(form)) : saveEnquiry(id, toPayload(form))),
     onSuccess: (row) => {
+      if (draftId) queryClient.invalidateQueries({ queryKey: ["inbox"] });
+      queryClient.invalidateQueries({ queryKey: ["enquiry-emails"] });
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["names"] });
@@ -268,6 +332,24 @@ function EnquiryForm({ id }: { id: string | null }) {
 
   if (id && existing.isLoading) return <Spinner />;
   if (id && existing.error) return <Alert>{errorMessage(existing.error)}</Alert>;
+  if (draftId && draft.isLoading) return <Spinner />;
+  if (draftId && draft.error) return <Alert>{errorMessage(draft.error)}</Alert>;
+  if (draft.data && draft.data.status !== "pending") {
+    return (
+      <Alert kind="info">
+        This e-mail enquiry was already handled ({draft.data.status}).{" "}
+        {draft.data.enquiry_id ? (
+          <Link to={`/enquiries/${draft.data.enquiry_id}`} className="underline">
+            Open the enquiry
+          </Link>
+        ) : (
+          <Link to="/inbox" className="underline">
+            Back to the inbox
+          </Link>
+        )}
+      </Alert>
+    );
+  }
 
   const buy = numOrNull(form.buy_total);
   const sell = numOrNull(form.sell_total);
@@ -300,6 +382,8 @@ function EnquiryForm({ id }: { id: string | null }) {
             <>
               <span className="font-mono">{existing.data?.reference}</span> {existing.data && <StatusBadge status={existing.data.status} />}
             </>
+          ) : draftId ? (
+            "New enquiry from e-mail"
           ) : (
             "New enquiry"
           )}
@@ -323,6 +407,11 @@ function EnquiryForm({ id }: { id: string | null }) {
       </div>
 
       {message && <Alert kind="success">{message}</Alert>}
+      {draft.data?.summary && (
+        <Alert kind="info">
+          Read from the e-mail: {draft.data.summary} Check the details, then create the enquiry. The e-mail is shown below.
+        </Alert>
+      )}
       {(save.error || remove.error) && <Alert>{errorMessage(save.error ?? remove.error)}</Alert>}
       {showChecks && errors.length > 0 && <Alert>{errors.join(" ")}</Alert>}
       {warnings.length > 0 && (showChecks || id) && (
@@ -362,6 +451,11 @@ function EnquiryForm({ id }: { id: string | null }) {
               <datalist id="customer-names">
                 {customers.data?.map((n) => <option key={n} value={n} />)}
               </datalist>
+            </Field>
+            <Field label="Contact person">{input("contact_name", { autoComplete: "off" })}</Field>
+            <Field label="Contact phone">{input("contact_phone", { autoComplete: "off" })}</Field>
+            <Field label="Contact e-mail" className="sm:col-span-2" hint="Saved to the customer's contacts, so their next e-mails are recognised">
+              {input("contact_email", { type: "email", autoComplete: "off" })}
             </Field>
             <Field label="Sales person">
               <select className={inputClass} value={form.sales_person_name} onChange={(e) => set("sales_person_name", e.target.value)}>
@@ -441,7 +535,7 @@ function EnquiryForm({ id }: { id: string | null }) {
           </div>
         </Card>
 
-        <Card title="Subject & remarks" className="xl:col-span-3">
+        <Card title="Subject, requirements & remarks" className="xl:col-span-3">
           <div className="grid gap-3 md:grid-cols-2">
             <Field
               label="Subject"
@@ -456,10 +550,28 @@ function EnquiryForm({ id }: { id: string | null }) {
             <Field label="Remarks" hint="e.g. COMMISSION OMR 40/CNTR.">
               <textarea rows={2} className={inputClass} value={form.remarks} onChange={(e) => set("remarks", e.target.value)} />
             </Field>
+            <Field label="Requirements" hint="Commodity, weight / volume, incoterm, cargo readiness, special handling" className="md:col-span-2">
+              <textarea
+                rows={Math.min(10, Math.max(3, form.requirements.split("\n").length + 1))}
+                className={inputClass}
+                value={form.requirements}
+                onChange={(e) => set("requirements", e.target.value)}
+              />
+            </Field>
           </div>
         </Card>
       </fieldset>
 
+      {draft.data && (
+        <Card title={`E-mail${draft.data.emails.length > 1 ? `s (${draft.data.emails.length})` : ""}`}>
+          <div className="space-y-2">
+            {draft.data.emails.map((m) => (
+              <EmailView key={m.id} email={m} />
+            ))}
+          </div>
+        </Card>
+      )}
+      {id && <EnquiryEmails enquiryId={id} />}
       {id && existing.data && <AuditHistory enquiry={existing.data} />}
     </form>
   );
@@ -489,6 +601,8 @@ const FIELD_LABELS: Record<string, string> = {
   sales_person_id: "Sales person",
   remarks: "Remarks",
   reference: "Reference",
+  contact_id: "Contact",
+  requirements: "Requirements",
 };
 
 function showValue(field: string, v: unknown): ReactNode {
@@ -531,10 +645,42 @@ function AuditHistory({ enquiry }: { enquiry: EnquiryRow }) {
             </li>
           ))}
           <li className="pl-3 text-xs text-slate-400">
-            Record created {fmtDateTime(enquiry.created_at)} ({enquiry.source === "import" ? "from Excel" : "in the app"})
+            Record created {fmtDateTime(enquiry.created_at)} ({enquiry.source === "import" ? "from Excel" : enquiry.source === "email" ? "from an e-mail" : "in the app"})
           </li>
         </ol>
       )}
+    </Card>
+  );
+}
+
+const EMAILS_SHOWN = 5;
+
+/** The enquiry's e-mail history, newest first. */
+function EnquiryEmails({ enquiryId }: { enquiryId: string }) {
+  const emails = useQuery({ queryKey: ["enquiry-emails", enquiryId], queryFn: () => fetchEnquiryEmails(enquiryId) });
+  const counts = useQuery({ queryKey: ["inbox", "counts"], queryFn: fetchInboxCounts, staleTime: 60_000 });
+  const [all, setAll] = useState(false);
+  if (emails.isLoading) return <Spinner label="Loading e-mails…" />;
+  if (emails.error) return <Alert>{errorMessage(emails.error)}</Alert>;
+  const list = [...(emails.data ?? [])].reverse();
+  if (!list.length) return null;
+  const shown = all ? list : list.slice(0, EMAILS_SHOWN);
+  return (
+    <Card
+      title={`E-mails (${list.length})`}
+      actions={
+        list.length > EMAILS_SHOWN && (
+          <Button variant="ghost" size="sm" onClick={() => setAll(!all)}>
+            {all ? "Show latest only" : `Show all ${list.length}`}
+          </Button>
+        )
+      }
+    >
+      <div className="space-y-2">
+        {shown.map((m) => (
+          <EmailView key={m.id} email={m} mailbox={counts.data?.mailboxes[0]?.email} />
+        ))}
+      </div>
     </Card>
   );
 }

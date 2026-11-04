@@ -17,6 +17,7 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 | Register | Filter by enquiry / quoted / confirmation date, status, sales person, shipment type, free text; *Mark quoted*, *Confirm…*; export to Excel in the register layout |
 | New / edit enquiry | Auto reference (`SL` + YY + running number), qty parser, auto totals and profit, lost/cancelled, change history |
 | Import Excel | Upload the daily report or monthly workbook. Preview new / changed / unchanged / invalid rows, then import. The original file is archived |
+| Inbox | New enquiries read from the pricing mailbox, ready to create with one click; e-mails to review; every enquiry keeps its e-mail history (see [E-mail intake](#e-mail-intake)) |
 
 ## Project layout
 
@@ -27,6 +28,7 @@ src/lib/normalize.ts   date / qty / name parsing shared by the form and the impo
 src/lib/excel/         workbook reader, diff against the database, Excel export
 src/lib/api.ts         all Supabase queries
 src/pages/             screens
+supabase/functions/    gmail-sync Edge Function (e-mail intake); shared, unit-tested code in _shared/email/
 docs/                  analysis and implementation plan
 ```
 
@@ -148,3 +150,67 @@ npm run check-workbook -- "C:\projects\MONTHLY ENQUIRIES 2026 FINAL.xlsx"
 4. Reconcile against the totals in `docs/IMPLEMENTATION_PLAN.md` §1.3.
 
 Re-importing a file is safe. Rows already in sync are reported as *unchanged*, and blank cells never wipe saved values.
+
+## E-mail intake
+
+The `gmail-sync` Edge Function reads the pricing mailbox every 5 minutes and files every message:
+
+| The e-mail… | Goes to |
+|---|---|
+| carries an SL reference that is in the register (`SL262759 1X40' QINGDAO …`) | that enquiry's e-mail history |
+| replies to a message already filed (In-Reply-To / References headers) | the same enquiry, or the same pending e-mail enquiry |
+| cites an SL reference the register does not have yet | **Waiting for reference**, linked automatically when that enquiry is entered or imported |
+| is none of the above | read by Claude: a **new enquiry** (customer, contact, route, qty, incoterm, commodity, weights, attachments), a follow-up of one of the customer's open enquiries, or not an enquiry |
+| is a newsletter, promotion or automatic reply | **Ignored** |
+
+Nothing is created in the register without a person. In **Inbox → New enquiries**, check the details and click **Create enquiry**: the reference is issued, the contact is saved to the customer, and the e-mails move to the enquiry. **Review & edit** opens the full form first. **Add to existing enquiry** and **Not an enquiry** handle the rest. Anything the system is unsure about lands in **Needs review**; a message is never dropped.
+
+Duplicates are prevented in four places:
+- Each Gmail message is stored once.
+- Replies attach to the pending e-mail enquiry instead of opening a new one.
+- A pending e-mail enquiry is folded in automatically when staff create the enquiry by hand and reply with its reference.
+- Each card lists existing enquiries of the same customer from the last three weeks.
+
+**Keep the SL reference in the subject** when replying (house style already). Follow-ups are then filed without Claude.
+
+Claude reads only the messages the rules above cannot file, with their PDF and picture attachments. On `claude-opus-5-5` (the default) that costs an estimated 2–5 US cents per message read. Set `ANTHROPIC_MODEL=claude-haiku-5-5` for a far cheaper, less careful reader. E-mail text and attachments (except those of ignored mail) are stored in Supabase.
+
+Do the historical Excel import first, so that references in old conversations match.
+
+### Setup
+
+1. **Gmail access** (Google Workspace admin, once):
+   1. In [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Gmail API**.
+   2. *Google Auth Platform → Branding / Audience*: user type **Internal**. Internal apps keep their refresh token; external apps in testing lose it after 7 days. Under *Data access* add the scope `https://www.googleapis.com/auth/gmail.readonly`.
+   3. *Clients → Create client → Web application*, with the authorised redirect URI `https://developers.google.com/oauthplayground`. Copy the client ID and secret.
+   4. Open the [OAuth Playground](https://developers.google.com/oauthplayground). Under ⚙ tick *Use your own OAuth credentials* and paste the client ID and secret. In step 1 enter the scope `https://www.googleapis.com/auth/gmail.readonly`, click *Authorize APIs* and sign in **as pricing@silverlynxoman.com**. In step 2 click *Exchange authorization code for tokens* and copy the **refresh token**.
+2. **Claude**: create an API key in the [Claude Console](https://platform.claude.com/). Without a key, mail that needs reading goes to *Needs review*.
+3. **Database**: apply the new migration (`20261104200000_email_intake.sql`):
+
+   ```bash
+   npx supabase db push
+   ```
+
+4. **Secrets**. First make a random sync secret:
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+
+   Then store everything for the function:
+
+   ```bash
+   npx supabase secrets set GMAIL_MAILBOX=pricing@silverlynxoman.com GOOGLE_CLIENT_ID=<client id> GOOGLE_CLIENT_SECRET=<client secret> GOOGLE_REFRESH_TOKEN=<refresh token> ANTHROPIC_API_KEY=<api key> EMAIL_SYNC_SECRET=<random secret>
+   ```
+
+   Optional: `ANTHROPIC_MODEL` (default `claude-opus-5-5`), `ANTHROPIC_EFFORT` (default `low`), `INTERNAL_EMAIL_DOMAINS` (default `silverlynxoman.com`), `SYNC_LOOKBACK_HOURS` (first run, default `24`).
+5. **Deploy** the function. It checks its callers itself, so JWT verification is off:
+
+   ```bash
+   npx supabase functions deploy gmail-sync --no-verify-jwt
+   ```
+
+   If the CLI asks for Docker, add `--use-api`. Then sign in as an editor, open **Inbox** and click **Check mail now**.
+6. **Schedule**: put the sync secret into `supabase/email_sync_schedule.sql` and run that file in the Supabase SQL editor. It calls the function every 5 minutes. The file also has queries to check and stop the job.
+
+The status line on the Inbox page shows when the mailbox was last read and the last error, if any.

@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
+import { fetchInboxCounts } from "../lib/api";
 import { Alert } from "./ui";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -8,6 +10,8 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 export function Layout() {
   const { profile, session, canEdit, mustSetPassword, signOut } = useAuth();
   const location = useLocation();
+  const inbox = useQuery({ queryKey: ["inbox", "counts"], queryFn: fetchInboxCounts, refetchInterval: 60_000, enabled: !!profile });
+  const waiting = inbox.data ? inbox.data.drafts + inbox.data.review : 0;
 
   // Arrived from an invite or reset e-mail: choose a password before anything else.
   if (mustSetPassword && location.pathname !== "/account") return <Navigate to="/account" replace />;
@@ -26,6 +30,10 @@ export function Layout() {
             </NavLink>
             <NavLink to="/enquiries" end className={linkClass}>
               Register
+            </NavLink>
+            <NavLink to="/inbox" className={linkClass} title="New enquiries and e-mails to review from the pricing mailbox">
+              Inbox
+              {waiting > 0 && <span className="ml-1.5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-xs text-white">{waiting}</span>}
             </NavLink>
             {canEdit && (
               <>
