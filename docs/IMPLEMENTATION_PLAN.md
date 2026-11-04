@@ -209,6 +209,19 @@ Dry run of the importer on the real workbooks (`npm run check-workbook -- <file>
 - Enquiry / quoted / confirmed counts and buy / sell totals per month equal the Excel figures in §1.3. The only differences are the two excluded rows and the merged `SL262664`.
 - Profit differs where column N was typed by hand. See §1.5.
 
+The three workbooks were compared by reference on 2026-11-04 (FINAL.1, the October monthly report, and the November daily report).
+- **The master is the newest.** The two reports are older copies.
+- **Corrected import file:** `Enquiries 2026 - corrected for import.xlsx`, 2,785 rows (January to 4 November), 0 errors. It fixes:
+  - `SL262421`: kept for V R Logistics; Oasis Stars is renumbered `SL262994`, so new references start at `SL262995`.
+  - `SL262340`: totals were 16 × the rate for 4 containers; corrected to 30,400 / 32,800.
+  - `SL262637`: sell rate 261 corrected to 2,611.
+  - `SL262661`: Atlas Elevator was missing from the OCT sheet and is added back.
+  - `SL262344`: quoted year 2024 corrected to 2026.
+- **Statuses are imported as in Excel.** Old quotes are not closed as lost.
+- **Import protection:** migration `20261104203612_protect_app_edits`.
+  - Imports never overwrite fields changed in the app, or enquiries created in the app.
+  - The preview lists such values as *Kept*, and any row can be unticked before importing.
+
 | Task | Detail |
 |---|---|
 | Importer | Sheet detection, tolerant parsing (§1.4), cross-sheet de-duplication, diff preview, chunked transactional commit, original file archived, batch history |

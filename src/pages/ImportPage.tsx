@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { WorkBook } from "xlsx";
 import { useAuth } from "../auth/AuthProvider";
-import { Alert, Button, Card, Empty, Spinner } from "../components/ui";
+import { Alert, Button, Card, Empty, Spinner, inputClass } from "../components/ui";
 import { createImportBatch, fetchExistingByReferences, fetchImportBatches, runImportChunk, uploadImportFile } from "../lib/api";
 import { buildAnalysis, type DiffItem, type ImportAnalysis } from "../lib/excel/diff";
 import { listRegisterSheets, parseWorkbookSheets, readWorkbook, type ParsedRow, type SheetInfo } from "../lib/excel/register";
@@ -26,7 +26,10 @@ export default function ImportPage() {
   const [tab, setTab] = useState<Tab>("new");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ fileName: string; inserted: number; updated: number; unchanged: number; failed: number } | null>(null);
+  const [result, setResult] = useState<{ fileName: string; inserted: number; updated: number; unchanged: number; failed: number; leftOut: number } | null>(null);
+  /** References the person unticked in the preview: not imported. */
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState("");
 
   async function onFile(f: File | null) {
     setFile(f);
@@ -34,6 +37,8 @@ export default function ImportPage() {
     setSheets([]);
     setSelected([]);
     setAnalysis(null);
+    setExcluded(new Set());
+    setFilter("");
     setError(null);
     setResult(null);
     if (!f) return;
@@ -63,6 +68,8 @@ export default function ImportPage() {
       const existing = await fetchExistingByReferences([...new Set(parsed.rows.map((r) => r.reference))]);
       const next = buildAnalysis(parsed.rows, existing, parsed.skipped, chosen.map((s) => s.name));
       setAnalysis(next);
+      setExcluded(new Set());
+      setFilter("");
       setTab(next.items.some((i) => i.kind === "new") ? "new" : next.items.some((i) => i.kind === "changed") ? "changed" : "issues");
     } catch (e) {
       setError(errorMessage(e));
@@ -73,8 +80,9 @@ export default function ImportPage() {
 
   async function commit() {
     if (!analysis || !file) return;
-    const toSend = analysis.items.filter((i) => i.kind !== "unchanged");
-    const unchanged = analysis.items.length - toSend.length;
+    const toSend = analysis.items.filter((i) => i.kind !== "unchanged" && !excluded.has(i.row.reference));
+    const leftOut = analysis.items.filter((i) => i.kind !== "unchanged" && excluded.has(i.row.reference));
+    const unchanged = analysis.items.filter((i) => i.kind === "unchanged").length;
     setError(null);
     setBusy(`Importing 0 of ${toSend.length}…`);
     let inserted = 0;
@@ -87,15 +95,18 @@ export default function ImportPage() {
       } catch {
         // Keeping a copy of the original file is a convenience; the import itself can proceed.
       }
-      const warnings = [...analysis.invalid, ...analysis.items.map((i) => i.row)]
-        .flatMap((r) => r.issues.map((issue) => ({ sheet: r.sheet, row: r.rowNumber, reference: r.reference, ...issue })))
-        .slice(0, 1000);
+      const warnings = [
+        ...leftOut.map(({ row: r }) => ({ sheet: r.sheet, row: r.rowNumber, reference: r.reference, level: "warning", message: "Left out by the person importing" })),
+        ...[...analysis.invalid, ...analysis.items.map((i) => i.row)].flatMap((r) =>
+          r.issues.map((issue) => ({ sheet: r.sheet, row: r.rowNumber, reference: r.reference, ...issue })),
+        ),
+      ].slice(0, 1000);
       const batch = await createImportBatch({
         file_name: file.name,
         sheet_names: analysis.sheetNames,
         rows_in_file: analysis.rowsInFile,
         unchanged,
-        skipped: analysis.skipped + analysis.invalid.length,
+        skipped: analysis.skipped + analysis.invalid.length + leftOut.length,
         warnings,
         storage_path: storagePath,
       });
@@ -107,12 +118,12 @@ export default function ImportPage() {
         done += chunk.length;
         setBusy(`Importing ${done} of ${toSend.length}…`);
       }
-      setResult({ fileName: file.name, inserted, updated, unchanged, failed: 0 });
+      setResult({ fileName: file.name, inserted, updated, unchanged, failed: 0, leftOut: leftOut.length });
       setAnalysis(null);
     } catch (e) {
       // Each chunk is its own transaction: chunks before the failing one are saved.
       setError(`Import stopped after ${done} of ${toSend.length} rows: ${errorMessage(e)}. Re-running the import is safe — saved rows will show as unchanged.`);
-      if (done) setResult({ fileName: file.name, inserted, updated, unchanged, failed: toSend.length - done });
+      if (done) setResult({ fileName: file.name, inserted, updated, unchanged, failed: toSend.length - done, leftOut: leftOut.length });
     } finally {
       setBusy(null);
       queryClient.invalidateQueries({ queryKey: ["import-batches"] });
@@ -127,6 +138,10 @@ export default function ImportPage() {
   const counts = analysis && {
     new: analysis.items.filter((i) => i.kind === "new").length,
     changed: analysis.items.filter((i) => i.kind === "changed").length,
+    newIncluded: analysis.items.filter((i) => i.kind === "new" && !excluded.has(i.row.reference)).length,
+    changedIncluded: analysis.items.filter((i) => i.kind === "changed" && !excluded.has(i.row.reference)).length,
+    leftOut: analysis.items.filter((i) => i.kind !== "unchanged" && excluded.has(i.row.reference)).length,
+    kept: analysis.items.reduce((n, i) => n + i.kept.length, 0),
     unchanged: analysis.items.filter((i) => i.kind === "unchanged").length,
     errors: analysis.invalid.length,
     warnings: analysis.items.filter((i) => i.row.issues.length > 0).length,
@@ -143,6 +158,8 @@ export default function ImportPage() {
           <ul className="list-inside list-disc space-y-0.5">
             <li>a new reference creates an enquiry; an existing one is updated with the values in the sheet;</li>
             <li>blank cells never erase values already saved (clear values in the app instead);</li>
+            <li>values changed in the app are never overwritten, and enquiries created in the app are left alone;</li>
+            <li>you can untick any new or changed row before importing;</li>
             <li>rows with errors are listed and skipped; pre-numbered empty rows are ignored;</li>
             <li>nothing is saved until you press <b>Import</b>.</li>
           </ul>
@@ -161,7 +178,8 @@ export default function ImportPage() {
       {result && (
         <Alert kind={result.failed ? "warning" : "success"}>
           <b>{result.fileName}</b>: {result.inserted} new, {result.updated} updated, {result.unchanged} unchanged
-          {result.failed ? `, ${result.failed} not imported` : ""}.
+          {result.failed ? `, ${result.failed} not imported` : ""}
+          {result.leftOut ? `, ${result.leftOut} left out` : ""}.
         </Alert>
       )}
 
@@ -207,31 +225,67 @@ export default function ImportPage() {
         <Card
           title="3. Review and import"
           actions={
-            <Button onClick={commit} disabled={!canEdit || !!busy || counts.new + counts.changed === 0}>
-              Import {counts.new} new + {counts.changed} changed
+            <Button onClick={commit} disabled={!canEdit || !!busy || counts.newIncluded + counts.changedIncluded === 0}>
+              Import {counts.newIncluded} new + {counts.changedIncluded} changed
             </Button>
           }
         >
           {!canEdit && <Alert kind="warning">You need the editor role to import.</Alert>}
           <div className="mb-3 flex flex-wrap gap-2 text-sm">
-            <TabButton active={tab === "new"} onClick={() => setTab("new")} label="New" count={counts.new} tone="emerald" />
-            <TabButton active={tab === "changed"} onClick={() => setTab("changed")} label="Changed" count={counts.changed} tone="amber" />
-            <TabButton active={tab === "unchanged"} onClick={() => setTab("unchanged")} label="Unchanged" count={counts.unchanged} tone="slate" />
+            <TabButton active={tab === "new"} onClick={() => setTab("new")} label="New" count={counts.new} tone="confirmed" />
+            <TabButton active={tab === "changed"} onClick={() => setTab("changed")} label="Changed" count={counts.changed} tone="await" />
+            <TabButton active={tab === "unchanged"} onClick={() => setTab("unchanged")} label="Unchanged" count={counts.unchanged} tone="neutral" />
             <TabButton
               active={tab === "issues"}
               onClick={() => setTab("issues")}
               label="Errors / warnings"
               count={counts.errors + counts.warnings}
-              tone={counts.errors ? "rose" : "slate"}
+              tone={counts.errors ? "lost" : "neutral"}
             />
             <span className="ml-auto self-center text-meta text-ink-muted">
               {analysis.rowsInFile} rows read · {analysis.skipped} empty pre-numbered rows ignored
             </span>
           </div>
+          {counts.kept > 0 && (
+            <div className="mb-3">
+              <Alert kind="info">
+                {counts.kept} value{counts.kept === 1 ? " differs" : "s differ"} from the sheet but {counts.kept === 1 ? "was" : "were"} changed in the app, so the app&rsquo;s{" "}
+                {counts.kept === 1 ? "value is" : "values are"} kept. They are listed under the rows as <i>Kept</i>.
+              </Alert>
+            </div>
+          )}
           {tab === "issues" ? (
             <IssuesTable invalid={analysis.invalid} warned={analysis.items.filter((i) => i.row.issues.length > 0).map((i) => i.row)} />
           ) : (
-            <DiffTable items={analysis.items.filter((i) => i.kind === tab)} showChanges={tab === "changed"} />
+            <>
+              <div className="mb-2 flex flex-wrap items-center gap-3">
+                <label className="w-72 max-w-full">
+                  <span className="sr-only">Find a row by reference or customer</span>
+                  <input className={inputClass} type="search" placeholder="Find by reference or customer" value={filter} onChange={(e) => setFilter(e.target.value)} />
+                </label>
+                {tab !== "unchanged" && (
+                  <span className="text-meta text-ink-muted">
+                    Untick rows you do not want to import.{counts.leftOut ? ` ${counts.leftOut} left out.` : ""}
+                  </span>
+                )}
+              </div>
+              <DiffTable
+                items={analysis.items.filter((i) => i.kind === tab && matches(i, filter))}
+                showChanges={tab === "changed"}
+                selectable={tab !== "unchanged"}
+                excluded={excluded}
+                onToggle={(refs, include) =>
+                  setExcluded((prev) => {
+                    const next = new Set(prev);
+                    for (const r of refs) {
+                      if (include) next.delete(r);
+                      else next.add(r);
+                    }
+                    return next;
+                  })
+                }
+              />
+            </>
           )}
         </Card>
       )}
@@ -277,11 +331,25 @@ export default function ImportPage() {
 }
 
 const TONES = {
-  emerald: "bg-emerald-100 text-emerald-800",
-  amber: "bg-amber-100 text-amber-800",
-  rose: "bg-rose-100 text-rose-800",
-  slate: "bg-table-head text-ink-heading",
+  confirmed: "bg-confirmed-bg text-confirmed",
+  await: "bg-await-bg text-await",
+  lost: "bg-lost-bg text-lost",
+  neutral: "bg-table-head text-ink-heading",
 } as const;
+
+const matches = (item: DiffItem, filter: string) => {
+  const q = filter.trim().toUpperCase();
+  return !q || item.row.reference.includes(q) || item.row.customer_name.toUpperCase().includes(q);
+};
+
+function KeptList({ item }: { item: DiffItem }): ReactNode {
+  if (!item.kept.length) return null;
+  return item.kept.map((c) => (
+    <div key={c.field} className="text-ink-muted">
+      <span className="font-medium text-await">Kept</span> {c.label}: {c.from} (edited in the app; the sheet has {c.to})
+    </div>
+  ));
+}
 
 function TabButton({ active, onClick, label, count, tone }: { active: boolean; onClick: () => void; label: string; count: number; tone: keyof typeof TONES }) {
   return (
@@ -296,13 +364,41 @@ function TabButton({ active, onClick, label, count, tone }: { active: boolean; o
   );
 }
 
-function DiffTable({ items, showChanges }: { items: DiffItem[]; showChanges: boolean }) {
+function DiffTable({
+  items,
+  showChanges,
+  selectable,
+  excluded,
+  onToggle,
+}: {
+  items: DiffItem[];
+  showChanges: boolean;
+  selectable: boolean;
+  excluded: Set<string>;
+  onToggle: (references: string[], include: boolean) => void;
+}) {
   if (!items.length) return <Empty>Nothing in this list.</Empty>;
+  const shown = items.slice(0, MAX_ROWS_SHOWN);
+  const refs = items.map((i) => i.row.reference);
+  const included = refs.filter((r) => !excluded.has(r)).length;
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-meta">
         <thead className="bg-table-head text-left text-ink-heading font-medium">
           <tr>
+            {selectable && (
+              <th className="w-8 px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  aria-label={included === refs.length ? "Untick all rows in this list" : "Tick all rows in this list"}
+                  checked={included === refs.length}
+                  ref={(el) => {
+                    if (el) el.indeterminate = included > 0 && included < refs.length;
+                  }}
+                  onChange={(e) => onToggle(refs, e.target.checked)}
+                />
+              </th>
+            )}
             <th className="px-2 py-1.5">Sheet / row</th>
             <th className="px-2 py-1.5">Ref</th>
             <th className="px-2 py-1.5">Enquiry</th>
@@ -321,22 +417,40 @@ function DiffTable({ items, showChanges }: { items: DiffItem[]; showChanges: boo
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
-          {items.slice(0, MAX_ROWS_SHOWN).map(({ row, changes }) => (
-            <tr key={row.reference} className="align-top">
+          {shown.map((item) => {
+            const { row, changes } = item;
+            const out = excluded.has(row.reference);
+            return (
+            <tr key={row.reference} className={`align-top ${out ? "bg-table-head text-ink-muted" : ""}`}>
+              {selectable && (
+                <td className="px-2 py-1.5">
+                  <input
+                    type="checkbox"
+                    aria-label={`Import ${row.reference}`}
+                    checked={!out}
+                    onChange={(e) => onToggle([row.reference], e.target.checked)}
+                  />
+                </td>
+              )}
               <td className="whitespace-nowrap px-2 py-1.5 text-ink-muted">
                 {row.sheet}!{row.rowNumber}
               </td>
               <td className="px-2 py-1.5 font-semibold tabular-nums">{row.reference}</td>
               <td className="whitespace-nowrap px-2 py-1.5">{fmtDate(row.enquiry_date)}</td>
-              <td className="px-2 py-1.5">{row.customer_name}</td>
+              <td className="px-2 py-1.5">
+                {row.customer_name}
+                {!showChanges && <KeptList item={item} />}
+              </td>
               {showChanges ? (
                 <td className="px-2 py-1.5">
                   {changes.map((c) => (
                     <div key={c.field}>
-                      <span className="text-ink-muted">{c.label}:</span> <span className="text-rose-700 line-through">{c.from}</span> →{" "}
-                      <span className="text-emerald-700">{c.to}</span>
+                      <span className="text-ink-muted">{c.label}:</span> <span className="text-lost line-through">{c.from}</span> →{" "}
+                      <span className="text-confirmed">{c.to}</span>
                     </div>
                   ))}
+                  <KeptList item={item} />
+                  {out && <div className="font-medium">Left out: not imported</div>}
                 </td>
               ) : (
                 <>
@@ -352,12 +466,13 @@ function DiffTable({ items, showChanges }: { items: DiffItem[]; showChanges: boo
                 </>
               )}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
       {items.length > MAX_ROWS_SHOWN && (
         <p className="mt-2 text-meta text-ink-muted">
-          Showing the first {MAX_ROWS_SHOWN} of {items.length}. All of them will be imported.
+          Showing the first {MAX_ROWS_SHOWN} of {items.length}. Find a row by reference or customer to untick it; every ticked row is imported.
         </p>
       )}
     </div>
@@ -388,11 +503,11 @@ function IssuesTable({ invalid, warned }: { invalid: ParsedRow[]; warned: Parsed
               <td className="px-2 py-1.5 font-semibold tabular-nums">{r.reference}</td>
               <td className="px-2 py-1.5">{r.customer_name}</td>
               <td className="whitespace-nowrap px-2 py-1.5">
-                {excluded ? <span className="font-medium text-rose-700">Skipped</span> : <span className="text-amber-700">Imported</span>}
+                {excluded ? <span className="font-medium text-lost">Skipped</span> : <span className="text-await">Imported</span>}
               </td>
               <td className="px-2 py-1.5">
                 {r.issues.map((i, n) => (
-                  <div key={n} className={i.level === "error" ? "text-rose-700" : "text-amber-800"}>
+                  <div key={n} className={i.level === "error" ? "text-lost" : "text-await"}>
                     {i.message}
                   </div>
                 ))}

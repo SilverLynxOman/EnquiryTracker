@@ -169,12 +169,17 @@ export async function fetchAudit(enquiryId: string): Promise<AuditEntry[]> {
 
 // --- Import ----------------------------------------------------------------
 
+/** Stored enquiries for the given references, with the fields protected from imports (edited in the app). */
 export async function fetchExistingByReferences(references: string[]): Promise<Map<string, EnquiryRow>> {
   const out = new Map<string, EnquiryRow>();
   for (let i = 0; i < references.length; i += 200) {
     const chunk = references.slice(i, i + 200);
-    const rows = unwrap<EnquiryRow[]>(await supabase.from("enquiry_register").select("*").in("reference", chunk));
-    for (const row of rows) out.set(row.reference, row);
+    const [rows, edited] = await Promise.all([
+      supabase.from("enquiry_register").select("*").in("reference", chunk).then((r) => unwrap<EnquiryRow[]>(r)),
+      supabase.from("enquiries").select("reference, app_edited_fields").in("reference", chunk).then((r) => unwrap<{ reference: string; app_edited_fields: string[] | null }[]>(r)),
+    ]);
+    const protectedBy = new Map(edited.map((e) => [e.reference, e.app_edited_fields ?? []]));
+    for (const row of rows) out.set(row.reference, { ...row, app_edited_fields: protectedBy.get(row.reference) ?? [] });
   }
   return out;
 }
