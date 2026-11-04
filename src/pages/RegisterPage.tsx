@@ -63,6 +63,7 @@ export default function RegisterPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
     },
     onError: (e) => setActionError(errorMessage(e)),
   });

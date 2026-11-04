@@ -1,11 +1,14 @@
 import { supabase } from "./supabase";
 import type {
   AuditEntry,
+  BreakdownDimension,
+  BreakdownRow,
   Enquiry,
   EnquiryPayload,
   EnquiryRow,
   ImportBatch,
   ImportPayload,
+  MonthlyTrendRow,
   NamedRef,
   PeriodStats,
   SalespersonSummaryRow,
@@ -185,5 +188,32 @@ export async function fetchPeriodStats(from: string, to: string): Promise<Period
 }
 
 export async function fetchSalespersonSummary(from: string, to: string): Promise<SalespersonSummaryRow[]> {
-  return unwrap(await supabase.rpc("salesperson_summary", { p_from: from, p_to: to }));
+  const rows = unwrap<SalespersonSummaryRow[]>(await supabase.rpc("salesperson_summary", { p_from: from, p_to: to }));
+  return rows.map((r) => ({ ...r, profit: Number(r.profit) }));
+}
+
+const ALL: Omit<RegisterFilters, "basis" | "from" | "to"> = { status: "", salesPersonId: "", mode: "", q: "" };
+
+/** For the daily / weekly / monthly reports: enquiries raised in the range, and jobs confirmed in it. */
+export async function fetchPeriodRows(from: string, to: string): Promise<{ raised: EnquiryRow[]; confirmed: EnquiryRow[] }> {
+  const [raised, confirmed] = await Promise.all([
+    fetchRegisterAll({ ...ALL, basis: "enquiry_date", from, to }),
+    fetchRegisterAll({ ...ALL, basis: "confirmed_date", from, to, status: "confirmed" }),
+  ]);
+  return { raised, confirmed };
+}
+
+export async function fetchBreakdown(from: string, to: string, dimension: BreakdownDimension): Promise<BreakdownRow[]> {
+  const rows = unwrap<BreakdownRow[]>(await supabase.rpc("enquiry_breakdown", { p_from: from, p_to: to, p_dimension: dimension }));
+  return rows.map((r) => ({ ...r, sell_total: Number(r.sell_total), profit: Number(r.profit) }));
+}
+
+export async function fetchMonthlyTrend(from: string, to: string): Promise<MonthlyTrendRow[]> {
+  const rows = unwrap<MonthlyTrendRow[]>(await supabase.rpc("monthly_trend", { p_from: from, p_to: to }));
+  return rows.map((r) => ({
+    ...r,
+    converted_profit: Number(r.converted_profit),
+    confirmed_sell: Number(r.confirmed_sell),
+    confirmed_profit: Number(r.confirmed_profit),
+  }));
 }

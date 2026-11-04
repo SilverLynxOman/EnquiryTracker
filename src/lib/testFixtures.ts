@@ -1,0 +1,41 @@
+import type { EnquiryRow } from "./types";
+
+/** A register row for unit tests; status follows the dates unless given. */
+export function enquiry(over: Partial<EnquiryRow> & Pick<EnquiryRow, "reference" | "enquiry_date">): EnquiryRow {
+  return {
+    id: over.reference,
+    quoted_date: null,
+    confirmed_date: null,
+    closure: null,
+    closure_reason: null,
+    status: over.confirmed_date ? "confirmed" : over.quoted_date ? "quoted" : "new",
+    customer_id: "c1",
+    customer_name: "TEST CUSTOMER LLC",
+    subject: `${over.reference} LCL SHANGHAI CHINA TO SOHAR OMAN`,
+    trade_type: "IMP",
+    qty_text: "LCL",
+    shipment_mode: "LCL",
+    units: null,
+    container_type: null,
+    currency: "USD",
+    buy_rate: null,
+    buy_total: null,
+    sell_rate: null,
+    sell_total: null,
+    profit: null,
+    pol: "SHANGHAI CHINA",
+    pod: "SOHAR OMAN",
+    agent_id: null,
+    agent_name: null,
+    sales_person_id: "s1",
+    sales_person_name: "ASHWIN",
+    remarks: null,
+    source: "manual",
+    import_batch_id: null,
+    created_at: "2026-11-01T08:00:00Z",
+    created_by: null,
+    updated_at: "2026-11-01T08:00:00Z",
+    updated_by: null,
+    ...over,
+  };
+}

@@ -17,6 +17,7 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 | Register | Filter by enquiry / quoted / confirmation date, status, sales person, shipment type, free text; *Mark quoted*, *Confirm…*; export to Excel in the register layout |
 | New / edit enquiry | Auto reference (`SL` + YY + running number), qty parser, auto totals and profit, lost/cancelled, change history |
 | Import Excel | Upload the daily report or monthly workbook. Preview new / changed / unchanged / invalid rows, then import. The original file is archived |
+| Reports | Daily, weekly (Sat–Fri) and monthly reports: enquiries raised plus earlier ones confirmed, sales-person and mode totals; Excel export in the old report layouts. Analytics: monthly trend and profit chart; conversion and profit by sales person, customer, agent, lane, mode or trade type |
 
 ## Project layout
 
@@ -24,9 +25,10 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 supabase/migrations/   database schema (tables, RLS, triggers, RPC functions)
 supabase/seed.sql      sales persons
 src/lib/normalize.ts   date / qty / name parsing shared by the form and the importer
-src/lib/excel/         workbook reader, diff against the database, Excel export
+src/lib/excel/         workbook reader, diff against the database, Excel exports
+src/lib/reports.ts     report periods, sections and totals
 src/lib/api.ts         all Supabase queries
-src/pages/             screens
+src/pages/             screens (src/pages/reports/: daily / weekly / monthly / analytics)
 docs/                  analysis and implementation plan
 ```
 
@@ -46,7 +48,7 @@ The Supabase CLI is run through `npx` (it cannot be installed with `npm install 
 
 ### 2. Database
 
-The project `Enquiry_Tracker` (`jaaueukrzijesejjaplt`) already has both migrations in `supabase/migrations/` applied, plus the sales persons from `supabase/seed.sql`. Future schema changes go in new migration files. Apply them with:
+The project `Enquiry_Tracker` (`jaaueukrzijesejjaplt`) already has all migrations in `supabase/migrations/` applied, plus the sales persons from `supabase/seed.sql`. Future schema changes go in new migration files. Apply them with:
 
 ```bash
 npx supabase login

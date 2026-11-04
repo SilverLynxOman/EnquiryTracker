@@ -23,6 +23,9 @@ export function Layout() {
             <NavLink to="/enquiries" end className={linkClass}>
               Register
             </NavLink>
+            <NavLink to="/reports" className={linkClass}>
+              Reports
+            </NavLink>
             {canEdit && (
               <>
                 <NavLink to="/enquiries/new" className={linkClass}>

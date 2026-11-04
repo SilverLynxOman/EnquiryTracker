@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import { fmtDate } from "../format";
 import type { EnquiryRow } from "../types";
 
-const COMPANY = import.meta.env.VITE_COMPANY_NAME ?? "SILVER LYNX COMPANY LLC";
+export const COMPANY = import.meta.env.VITE_COMPANY_NAME ?? "SILVER LYNX COMPANY LLC";
 
 const HEADER_1 = [
   "SL. NO.", "ENQUIRY DATE", "QUOTED DATE", "CONFIRMATION DATE", "MY REFERENCE",
@@ -18,17 +18,17 @@ const MERGES = [
   "H3:I3", "J3:K3", "L3:M3", "N3:N4", "O3:Q3", "R3:R4", "S3:S4",
 ];
 const WIDTHS = [6, 12, 12, 14, 12, 34, 52, 6, 12, 10, 10, 10, 10, 10, 22, 18, 18, 14, 28];
+/** Rows above the data: company, title and the two header rows. */
+const HEAD_ROWS = 4;
+const LAST_COL = HEADER_1.length - 1;
 
-/**
- * Writes enquiries in the same layout as the Excel register (rows 1-4 header, data from row 5),
- * so the file opens like the old workbook and can be re-imported.
- */
-export function exportRegister(rows: EnquiryRow[], title: string, fileName: string): void {
-  const body = rows.map((r, i) => [
-    i + 1,
+/** One enquiry in the register's columns A..S. */
+export function registerRow(r: EnquiryRow, slNo: number): unknown[] {
+  return [
+    slNo,
     fmtDate(r.enquiry_date),
-    fmtDate(r.quoted_date),
-    fmtDate(r.confirmed_date),
+    fmtDate(r.quoted_date) || null,
+    fmtDate(r.confirmed_date) || null,
     r.reference,
     r.customer_name,
     r.subject,
@@ -44,12 +44,34 @@ export function exportRegister(rows: EnquiryRow[], title: string, fileName: stri
     r.agent_name,
     r.sales_person_name,
     r.remarks,
-  ]);
-  const ws = XLSX.utils.aoa_to_sheet([[COMPANY], [title], HEADER_1, HEADER_2, ...body]);
-  ws["!merges"] = MERGES.map((m) => XLSX.utils.decode_range(m));
-  ws["!cols"] = WIDTHS.map((wch) => ({ wch }));
+  ];
+}
 
+/**
+ * A sheet in the Excel register layout (rows 1-4 header, data from row 5), so it opens like the old workbook
+ * and can be re-imported. `sectionTitles` are 0-based indexes into `body` of title rows to merge across A:S.
+ */
+export function registerSheet(title: string, body: unknown[][], sectionTitles: number[] = []): XLSX.WorkSheet {
+  const ws = XLSX.utils.aoa_to_sheet([[COMPANY], [title], HEADER_1, HEADER_2, ...body]);
+  ws["!merges"] = [
+    ...MERGES.map((m) => XLSX.utils.decode_range(m)),
+    ...sectionTitles.map((i) => ({ s: { r: HEAD_ROWS + i, c: 0 }, e: { r: HEAD_ROWS + i, c: LAST_COL } })),
+  ];
+  ws["!cols"] = WIDTHS.map((wch) => ({ wch }));
+  return ws;
+}
+
+export function registerWorkbook(rows: EnquiryRow[], title: string): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "REGISTER");
+  XLSX.utils.book_append_sheet(wb, registerSheet(title, rows.map((r, i) => registerRow(r, i + 1))), "REGISTER");
+  return wb;
+}
+
+/** Downloads the workbook in the browser. */
+export function saveWorkbook(wb: XLSX.WorkBook, fileName: string): void {
   XLSX.writeFile(wb, fileName);
+}
+
+export function exportRegister(rows: EnquiryRow[], title: string, fileName: string): void {
+  saveWorkbook(registerWorkbook(rows, title), fileName);
 }

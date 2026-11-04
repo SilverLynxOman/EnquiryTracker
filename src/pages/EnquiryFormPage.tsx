@@ -234,6 +234,7 @@ function EnquiryForm({ id }: { id: string | null }) {
     onSuccess: (row) => {
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["names"] });
       queryClient.invalidateQueries({ queryKey: ["sales-persons"] });
       queryClient.invalidateQueries({ queryKey: ["audit", row.id] });
@@ -252,6 +253,7 @@ function EnquiryForm({ id }: { id: string | null }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
       navigate("/enquiries", { replace: true });
     },
   });
