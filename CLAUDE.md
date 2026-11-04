@@ -98,6 +98,7 @@ The importer runs in the browser (`src/pages/ImportPage.tsx`), and the same pars
   - Trigger functions are also revoked from `authenticated`, because Supabase grants it directly (see `20261102162837_lock_trigger_functions.sql`).
   - Every new table gets RLS policies of the form `(select public.can_edit())`.
 - `supabase/seed.sql` holds only the sales-person master list.
+- `.claude/skills/supabase` and `.claude/skills/supabase-postgres-best-practices` are Supabase's official agent skills, copied unchanged from `supabase/agent-skills` at commit `c9be0e9` (MIT). To update them, copy the folders again from a newer commit. Where they conflict with this file, this file wins. For example, the existing `SECURITY DEFINER` role helpers in `public` (`app_role`, `can_edit`, `is_admin`) are intentional: they only report on the caller's own profile.
 
 ## Data handling
 
