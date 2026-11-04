@@ -3,6 +3,7 @@ import type {
   AuditEntry,
   BreakdownDimension,
   BreakdownRow,
+  CustomerSummary,
   CustomerSuggestion,
   DuplicateCandidate,
   EmailListItem,
@@ -15,8 +16,10 @@ import type {
   ImportBatch,
   ImportPayload,
   InboxCounts,
+  MergeResult,
   MonthlyTrendRow,
   NamedRef,
+  NotDuplicatePair,
   PeriodStats,
   SalespersonSummaryRow,
   ShipmentMode,
@@ -61,6 +64,39 @@ export async function fetchProfileNames(): Promise<Map<string, string>> {
     await supabase.from("profiles").select("id, full_name"),
   );
   return new Map(rows.map((r) => [r.id, r.full_name ?? "Unknown user"]));
+}
+
+// --- Customers -------------------------------------------------------------
+
+export function fetchCustomerSummaries(): Promise<CustomerSummary[]> {
+  return fetchAllPages<CustomerSummary>((from, to) =>
+    supabase.from("customer_summary").select("*").order("name").order("id").range(from, to),
+  );
+}
+
+export function fetchNotDuplicates(): Promise<NotDuplicatePair[]> {
+  return fetchAllPages<NotDuplicatePair>((from, to) =>
+    supabase.from("customer_not_duplicates").select("customer_a, customer_b, created_at").order("created_at", { ascending: false }).range(from, to),
+  );
+}
+
+/** Marks every pair among the customers as different companies, so they are no longer suggested as duplicates. */
+export async function markCustomersDistinct(ids: string[]): Promise<number> {
+  return unwrap(await supabase.rpc("mark_customers_distinct", { p_ids: ids }));
+}
+
+export async function undoNotDuplicate(pair: Pick<NotDuplicatePair, "customer_a" | "customer_b">): Promise<void> {
+  unwrap(await supabase.from("customer_not_duplicates").delete().eq("customer_a", pair.customer_a).eq("customer_b", pair.customer_b));
+}
+
+/** Admin only. Moves everything of `merge` onto `keep`, remembers their names, deletes them; optionally renames `keep`. */
+export async function mergeCustomers(keep: string, merge: string[], name: string | null): Promise<MergeResult> {
+  return unwrap(await supabase.rpc("merge_customers", { p_keep: keep, p_merge: merge, p_name: name }));
+}
+
+/** Renames a customer; the old name stays a former name, so imports and e-mails that use it still match. */
+export async function renameCustomer(id: string, name: string): Promise<void> {
+  unwrap(await supabase.rpc("rename_customer", { p_id: id, p_name: name }));
 }
 
 // --- Register --------------------------------------------------------------

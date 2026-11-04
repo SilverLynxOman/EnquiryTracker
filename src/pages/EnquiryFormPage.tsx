@@ -586,6 +586,8 @@ const FIELD_LABELS: Record<string, string> = {
   closure: "Closed as",
   closure_reason: "Reason",
   customer_id: "Customer",
+  // Written by merge_customers: names instead of ids, since the old customer no longer exists.
+  customer: "Customer",
   subject: "Subject",
   trade_type: "Mode",
   qty_text: "Qty",
@@ -637,9 +639,10 @@ function AuditHistory({ enquiry }: { enquiry: EnquiryRow }) {
               {a.action === "delete" && <div>Deleted</div>}
               {a.action === "update" && a.changes && (
                 <ul className="mt-0.5 space-y-0.5">
-                  {Object.entries(a.changes as Record<string, { old: unknown; new: unknown }>).map(([field, c]) => (
+                  {Object.entries(a.changes as Record<string, { old: unknown; new: unknown; merged?: boolean }>).map(([field, c]) => (
                     <li key={field}>
                       <span className="text-ink-muted">{FIELD_LABELS[field] ?? field}:</span> {showValue(field, c.old)} → {showValue(field, c.new)}
+                      {c.merged && <span className="text-ink-muted"> (customers merged)</span>}
                     </li>
                   ))}
                 </ul>

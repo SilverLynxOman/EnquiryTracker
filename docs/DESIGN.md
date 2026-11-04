@@ -12,6 +12,8 @@ Rules for every screen of the Enquiry Tracker. The register (`src/pages/Register
 | Buttons, inputs, fields, cards, status badges, alerts, empty states | `src/components/ui.tsx` |
 | Icons, app logo | `src/components/icons.tsx` (stroke icons on a 24 px grid, after Lucide) |
 | Dropdown menus (account, row overflow, column chooser) | `src/components/Menu.tsx` |
+| Modal dialogs (merge customers, rename) | `src/components/Dialog.tsx` |
+| Toolbar select box | `src/components/SelectBox.tsx` |
 | Display rules: names, ports, dates, waiting time, next step | `src/lib/display.ts` |
 | Register URL state, periods, columns | `src/lib/registerView.ts` |
 
@@ -88,9 +90,9 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 ## Components
 
 ### Navigation
-- **Left:** logo and application name, then Dashboard, Register and Reports, each with an icon. The active item has 600 weight, violet text and a 2 px violet underline.
+- **Left:** logo and application name, then Dashboard, Register, Reports, Inbox and Customers, each with an icon. The active item has 600 weight, violet text and a 2 px violet underline.
 - **Right:** Import (editors only), Export (on the Register page; it exports the filtered view), New enquiry (the one filled primary button), then the avatar menu (account, sign out).
-- **Narrow screens:** labels collapse to icons, and their accessible names stay.
+- **Narrow screens:** labels collapse to icons, and their accessible names stay. Navigation labels show from 1024 px, Import and Export labels from 1280 px. Below 640 px the bar has a 16 px gutter, and on the narrowest phones the navigation icons scroll inside the bar instead of widening the page.
 
 ### Page structure (list pages)
 - **Order:** top navigation, then status tabs, then the toolbar, then one table surface, then pagination inside that surface.
@@ -142,6 +144,17 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 - **Keyboard:** Enter or Space opens, arrows and Home/End move, Escape closes and returns focus to the trigger, Tab leaves.
 - **Checkbox items** (the column chooser) stay open when toggled.
 
+### Dialogs
+- **Element:** the native `<dialog>` through `Dialog`: focus stays inside, Escape and ✕ close it (not while saving), and focus returns to the button that opened it.
+- **Layout:** title bar, body, then a footer with Cancel (outline) and the one primary action on the right. Errors appear inside the dialog, above the footer.
+- **Use for:** decisions that need input or confirmation before a change that is hard to undo (merging customers, renaming). Not for information that could sit on the page.
+
+### Customers page
+- **Tabs:** *Possible duplicates* (default) and *All customers*, styled like the status tabs, with counts under the search.
+- **Duplicate groups:** one table. Each group is a row group whose header says why the names match ("same name apart from punctuation or legal form", "similar spelling") and holds *Not the same* (ghost) and *Merge…* (outline). Every name starts ticked; unticking one turns the button into "Merge 2 ticked…".
+- **Merge dialog:** choose the customer to keep (most enquiries by default), optionally correct its name, and read what moves where before confirming.
+- **Counts link to the register**, searched for that customer over all dates.
+
 ### Feedback states
 - **Loading:** skeleton rows on first load. On refetch the previous rows stay in place at 60 % opacity, with no layout jump.
 - **Empty:** say why the list is empty and offer the way out: "Clear all filters", or "New enquiry" and "Import Excel" when there is no data at all.
@@ -160,7 +173,7 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 
 ## Accessibility
 
-- **Real controls:** use real `<button>`, `<a>`, `<label>` and `<select>` elements. Icon-only buttons get an `aria-label`.
+- **Real controls:** use real `<button>`, `<a>`, `<label>` and `<select>` elements. Icon-only buttons get an `aria-label`. `Field` wraps its one control in a `<label>`, so the field caption is the control's accessible name; a link that shows only a number gets an `aria-label` that says what it counts.
 - **Focus:** keep the global `:focus-visible` ring (2 px violet). Never remove an outline without replacing it.
 - **Not colour alone:** status always has a label and an icon, and selection has a marker, a chevron and `aria-current`.
 - **Contrast:** at least 4.5:1 for text and 3:1 for control outlines and meaningful graphics.

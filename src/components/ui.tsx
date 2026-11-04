@@ -73,10 +73,13 @@ export function Field({
   children: ReactNode;
   className?: string;
 }) {
+  // A real <label> around the one control inside, so the control is named by it; the hint stays outside the name.
   return (
     <div className={className}>
-      <span className="mb-1 block text-meta font-medium text-ink-heading">{label}</span>
-      {children}
+      <label className="block">
+        <span className="mb-1 block text-meta font-medium text-ink-heading">{label}</span>
+        {children}
+      </label>
       {hint && <span className="mt-1 block text-meta text-ink-muted">{hint}</span>}
     </div>
   );
