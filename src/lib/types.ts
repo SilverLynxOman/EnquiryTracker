@@ -64,7 +64,7 @@ export interface Enquiry {
   agent_id: string | null;
   sales_person_id: string | null;
   remarks: string | null;
-  source: "manual" | "import";
+  source: "manual" | "import" | "email";
   import_batch_id: string | null;
   created_at: string;
   created_by: string | null;
@@ -77,6 +77,11 @@ export interface EnquiryRow extends Enquiry {
   customer_name: string;
   agent_name: string | null;
   sales_person_name: string | null;
+  /**
+   * Import columns changed in the app (enquiries.app_edited_fields); imports never overwrite them.
+   * Not in the view: loaded separately where needed (the import preview).
+   */
+  app_edited_fields?: string[];
 }
 
 /** Body of the `upsert_enquiry` RPC. Names are resolved (or created) server-side. */

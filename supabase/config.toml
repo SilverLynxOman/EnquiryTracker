@@ -1,0 +1,7 @@
+# Supabase CLI settings for this project (used by `supabase link` / `supabase db push`, locally and in
+# .github/workflows/migrations.yml). Only values that differ from the CLI defaults are listed.
+project_id = "enquiry-tracker"
+
+[db]
+# Matches the hosted project (Postgres 17), so a local `supabase start` runs the same major version.
+major_version = 17

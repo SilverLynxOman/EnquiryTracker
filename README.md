@@ -49,14 +49,33 @@ The Supabase CLI is run through `npx` (it cannot be installed with `npm install 
 
 ### 2. Database
 
-The project `Enquiry_Tracker` (`jaaueukrzijesejjaplt`) already has all migrations in `supabase/migrations/` applied, plus the sales persons from `supabase/seed.sql`. Future schema changes go in new migration files. Apply them with:
+The project `Enquiry_Tracker` (`jaaueukrzijesejjaplt`) already has every migration in `supabase/migrations/` applied, plus the sales persons from `supabase/seed.sql`.
+
+**Schema changes are applied automatically when a pull request is merged.** `.github/workflows/migrations.yml` does the work:
+
+- **When a pull request changes `supabase/migrations/`,** a dry run lists the migrations that merging would apply. It fails if Supabase has a version with no matching file here.
+- **After the merge to `main`,** it runs `supabase db push`, which applies only the new files. A re-run is harmless.
+- **To run it by hand:** Actions → *Database migrations* → *Run workflow*.
+
+One-time setup. In GitHub, go to *Settings → Secrets and variables → Actions → New repository secret* and add:
+
+| Secret | Where to get it |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens → *Generate new token* |
+| `SUPABASE_DB_PASSWORD` | The database password chosen when the project was created. You can reset it under *Project Settings → Database*. |
+
+To add a schema change, create a timestamped file and write the SQL in it:
+
+```bash
+npx supabase migration new add_something
+```
+
+Commit it in a pull request; it is applied when the pull request is merged. Never edit a migration that has already been applied. Add a new one instead.
+
+To apply migrations by hand (for example before the secrets are set up):
 
 ```bash
 npx supabase login
-```
-
-```bash
-npx supabase init
 ```
 
 ```bash
@@ -145,9 +164,15 @@ Optional first step: preview what an import would do without touching the databa
 npm run check-workbook -- "C:\projects\MONTHLY ENQUIRIES 2026 FINAL.xlsx"
 ```
 
-1. Sign in as an editor → **Import Excel** → choose `MONTHLY ENQUIRIES 2026 FINAL.xlsx`.
+1. Sign in as an editor → **Import Excel** → choose the workbook.
 2. The month sheets (`JAN.` … `NOV`) are pre-selected. Leave `DATA1` out, because it repeats October rows.
-3. **Analyse** → review the *Errors / warnings* tab. Known issues: `SL262421` and `SL262664` are each used for two different enquiries. → **Import**.
+3. **Analyse** → review the *New*, *Changed* and *Errors / warnings* tabs. Untick any row that should not be imported (search finds rows that are not shown). → **Import**.
 4. Reconcile against the totals in `docs/IMPLEMENTATION_PLAN.md` §1.3.
 
-Re-importing a file is safe. Rows already in sync are reported as *unchanged*, and blank cells never wipe saved values.
+**What an import never does:**
+
+- **Erase values:** blank cells never wipe saved values.
+- **Overwrite app changes:** values changed in the app are kept, and the preview lists them as *Kept*. Enquiries created in the app are never changed by an import.
+- **Repeat work:** re-importing a file is safe. Rows already in sync are reported as *unchanged*.
+
+Import only the most up-to-date workbook. An older copy, such as a monthly or daily report, would replace newer values with older ones where they differ.
