@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { initials } from "../lib/display";
 import { useRegisterExport } from "../pages/register/useRegisterExport";
@@ -14,12 +14,15 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export function Layout() {
-  const { profile, session, canEdit, signOut } = useAuth();
+  const { profile, session, canEdit, mustSetPassword, signOut } = useAuth();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const exporter = useRegisterExport();
   const onRegister = pathname === "/enquiries";
   const name = profile?.full_name ?? session?.user.email ?? "Account";
+
+  // Arrived from an invite or reset e-mail: choose a password before anything else. (After the hooks above.)
+  if (mustSetPassword && pathname !== "/account") return <Navigate to="/account" replace />;
 
   return (
     <div className="min-h-screen">
@@ -65,7 +68,7 @@ export function Layout() {
               </Link>
             )}
             <Menu
-              label={`Account: ${name}`}
+              label={`Account and password: ${name}`}
               trigger={initials(name)}
               triggerClassName="ml-2 flex size-9 items-center justify-center rounded-full bg-selected text-control font-semibold text-primary hover:bg-primary/15"
               header={
@@ -78,7 +81,7 @@ export function Layout() {
                 </div>
               }
               items={[
-                { label: "Account settings", icon: "user", onSelect: () => navigate("/account") },
+                { label: "Account and password", icon: "user", onSelect: () => navigate("/account") },
                 { label: "Sign out", icon: "logout", onSelect: () => void signOut(), separatorBefore: true },
               ]}
             />

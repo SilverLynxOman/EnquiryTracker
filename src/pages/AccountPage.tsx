@@ -4,7 +4,7 @@ import { Alert, Button, Card, Field, inputClass } from "../components/ui";
 import { supabase } from "../lib/supabase";
 
 export default function AccountPage() {
-  const { session, profile } = useAuth();
+  const { session, profile, mustSetPassword, passwordSet } = useAuth();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
@@ -19,7 +19,8 @@ export default function AccountPage() {
     setBusy(false);
     if (error) setMessage({ kind: "error", text: error.message });
     else {
-      setMessage({ kind: "success", text: "Password updated." });
+      setMessage({ kind: "success", text: "Password saved. Use it with your e-mail address to sign in from now on." });
+      passwordSet();
       setPassword("");
       setConfirm("");
     }
@@ -27,6 +28,13 @@ export default function AccountPage() {
 
   return (
     <div className="grid max-w-3xl gap-4 md:grid-cols-2">
+      {mustSetPassword && (
+        <div className="md:col-span-2">
+          <Alert kind="warning">
+            Choose a password now. You are signed in from an e-mail link, and you will need this password to sign in next time.
+          </Alert>
+        </div>
+      )}
       <Card title="Your account">
         <dl className="space-y-2 text-sm">
           <div>
