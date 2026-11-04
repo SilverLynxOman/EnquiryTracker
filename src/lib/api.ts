@@ -3,17 +3,25 @@ import type {
   AuditEntry,
   BreakdownDimension,
   BreakdownRow,
+  CustomerSuggestion,
+  DuplicateCandidate,
+  EmailListItem,
+  EmailMessage,
+  EmailStatus,
   Enquiry,
+  EnquiryDraft,
   EnquiryPayload,
   EnquiryRow,
   ImportBatch,
   ImportPayload,
+  InboxCounts,
   MonthlyTrendRow,
   NamedRef,
   PeriodStats,
   SalespersonSummaryRow,
   ShipmentMode,
   Status,
+  SyncResult,
 } from "./types";
 
 type Page = { data: unknown; error: { message: string } | null };
@@ -248,4 +256,109 @@ export async function fetchMonthlyTrend(from: string, to: string): Promise<Month
     confirmed_sell: Number(r.confirmed_sell),
     confirmed_profit: Number(r.confirmed_profit),
   }));
+}
+
+// --- E-mail intake ---------------------------------------------------------
+
+const EMAIL_COLUMNS =
+  "id, mailbox_id, gmail_message_id, gmail_thread_id, sender_type, from_email, from_name, to_emails, cc_emails, subject, " +
+  "received_at, snippet, body_text, sl_refs, attachments, status, classification, match_method, confidence, summary, note, " +
+  "suggested_enquiry_id, enquiry_id, draft_id";
+
+export async function fetchInboxCounts(): Promise<InboxCounts> {
+  return unwrap(await supabase.rpc("email_inbox_counts"));
+}
+
+export async function fetchPendingDrafts(): Promise<EnquiryDraft[]> {
+  const drafts = unwrap<EnquiryDraft[]>(
+    await supabase
+      .from("enquiry_drafts")
+      .select(`*, emails:email_messages(${EMAIL_COLUMNS})`)
+      .eq("status", "pending")
+      .order("received_at", { ascending: true }) // a work queue: oldest first
+      .limit(200),
+  );
+  for (const d of drafts) d.emails.sort((a, b) => a.received_at.localeCompare(b.received_at));
+  return drafts;
+}
+
+export async function fetchDraft(id: string): Promise<EnquiryDraft> {
+  const d = unwrap<EnquiryDraft>(
+    await supabase.from("enquiry_drafts").select(`*, emails:email_messages(${EMAIL_COLUMNS})`).eq("id", id).single(),
+  );
+  d.emails.sort((a, b) => a.received_at.localeCompare(b.received_at));
+  return d;
+}
+
+export async function fetchEmails(status: EmailStatus, limit = 100): Promise<EmailListItem[]> {
+  return unwrap(
+    await supabase
+      .from("email_messages")
+      .select(
+        `${EMAIL_COLUMNS}, enquiry:enquiries!email_messages_enquiry_id_fkey(id, reference), ` +
+          "suggested:enquiries!email_messages_suggested_enquiry_id_fkey(id, reference)",
+      )
+      .eq("status", status)
+      .order("received_at", { ascending: false })
+      .limit(limit),
+  );
+}
+
+export async function fetchEnquiryEmails(enquiryId: string): Promise<EmailMessage[]> {
+  return unwrap(
+    await supabase.from("email_messages").select(EMAIL_COLUMNS).eq("enquiry_id", enquiryId).order("received_at", { ascending: true }),
+  );
+}
+
+export async function createEnquiryFromDraft(draftId: string, payload: EnquiryPayload): Promise<Enquiry> {
+  return unwrap(await supabase.rpc("create_enquiry_from_draft", { p_draft_id: draftId, p: payload }));
+}
+
+export async function mergeDraft(draftId: string, reference: string): Promise<{ enquiry_id: string; reference: string }> {
+  return unwrap(await supabase.rpc("merge_draft_into_enquiry", { p_draft_id: draftId, p_reference: reference }));
+}
+
+export async function dismissDraft(draftId: string, reason: string | null): Promise<void> {
+  unwrap(await supabase.rpc("dismiss_draft", { p_draft_id: draftId, p_reason: reason }));
+}
+
+/** Links an e-mail to the enquiry with this reference; a null reference sends it back to review. */
+export async function linkEmail(emailId: string, reference: string | null): Promise<{ enquiry_id: string | null; reference: string | null }> {
+  return unwrap(await supabase.rpc("link_email", { p_email_id: emailId, p_reference: reference }));
+}
+
+export async function setEmailIgnored(emailId: string, ignored: boolean): Promise<void> {
+  unwrap(await supabase.rpc("set_email_ignored", { p_email_id: emailId, p_ignored: ignored }));
+}
+
+export async function draftFromEmail(emailId: string): Promise<string> {
+  return unwrap(await supabase.rpc("draft_from_email", { p_email_id: emailId }));
+}
+
+export async function fetchDraftDuplicates(draftId: string): Promise<DuplicateCandidate[]> {
+  return unwrap(await supabase.rpc("draft_duplicates", { p_draft_id: draftId }));
+}
+
+export async function suggestCustomers(name: string | null, email: string | null): Promise<CustomerSuggestion[]> {
+  const rows = unwrap<CustomerSuggestion[]>(await supabase.rpc("suggest_customers", { p_name: name ?? "", p_email: email ?? "" }));
+  return rows.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+
+/** Runs the gmail-sync Edge Function now (editors only). */
+export async function checkMailNow(): Promise<SyncResult> {
+  const { data, error } = await supabase.functions.invoke<SyncResult>("gmail-sync", { method: "POST", body: {} });
+  if (error) {
+    // The function answers errors as JSON {error}; show that rather than the generic HTTP message.
+    const context = (error as { context?: Response }).context;
+    const body = context && typeof context.json === "function" ? await context.json().catch(() => null) : null;
+    throw new Error((body as { error?: string } | null)?.error ?? error.message);
+  }
+  return data ?? {};
+}
+
+/** A short-lived link to download a stored attachment under its original name. */
+export async function attachmentUrl(path: string, filename: string): Promise<string> {
+  const { data, error } = await supabase.storage.from("email-attachments").createSignedUrl(path, 300, { download: filename });
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
 }

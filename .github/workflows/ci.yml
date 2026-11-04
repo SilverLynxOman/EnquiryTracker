@@ -19,6 +19,11 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check the gmail-sync Edge Function
+        run: deno check --no-lock --node-modules-dir=none --no-config supabase/functions/gmail-sync/index.ts
       - name: Build
         run: npm run build
         env:

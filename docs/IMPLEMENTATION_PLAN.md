@@ -129,6 +129,13 @@ Design choices:
 - **Imports never erase data.** A blank cell in the uploaded sheet never clears a value already in the database. Clearing a value is done in the app.
 - **Every change is audited** (who, when, old → new, and which import batch).
 - **References keep the current scheme** (`SL` + YY + 4 digits). The database issues the next number atomically, so two users can never get the same reference.
+- **E-mail intake is the one server-side job** (Phase 7). The Supabase Edge Function `gmail-sync`, called by pg_cron every 5 minutes, reads the pricing mailbox through the Gmail API and asks Claude only about messages it cannot match by SL reference or reply headers. It never creates an enquiry by itself: new enquiries wait as drafts until staff confirm them.
+
+```
+ Gmail (pricing@)  ──Gmail API──▶  Edge Function gmail-sync  ──service role──▶  email_match_context / ingest_email
+                                        │  ▲                                     (drafts, e-mail history, review queue)
+                       Claude API ◀─────┘  └── pg_cron every 5 min, or "Check mail now" (editor)
+```
 
 ---
 
@@ -151,6 +158,17 @@ Reports (`20261104180409_report_functions.sql`):
 - `monthly_trend` counts, month by month, the enquiries raised (and what became of them) and the jobs confirmed.
 - `enquiry_breakdown` groups the enquiries raised in a range by sales person, customer, agent, lane, mode or trade type.
 
+E-mail intake (`supabase/migrations/20261104202737_email_intake.sql`):
+
+| Table | Purpose |
+|---|---|
+| `customer_contacts` | Contact persons of a customer (name, e-mail, phone). Recognises the sender of the next e-mail |
+| `mailboxes` | Watched mailbox, sync checkpoint, lease, last error |
+| `email_messages` | Every message read: headers, text, SL references, attachments (`email-attachments` bucket), status (`linked` / `draft` / `awaiting_enquiry` / `review` / `ignored`), how it was matched, Claude's reading |
+| `enquiry_drafts` | New enquiries found in the mailbox, waiting for staff (`pending` → `created` / `merged` / `dismissed`) |
+
+`enquiries` gains `contact_id`, `requirements` and the source `email`. Sync RPCs (service role only): `begin_mailbox_sync`, `email_match_context`, `ingest_email`, `end_mailbox_sync`. Staff RPCs: `create_enquiry_from_draft` (the one-click create, locked against double creation), `merge_draft_into_enquiry`, `dismiss_draft`, `link_email`, `set_email_ignored`, `draft_from_email`, `draft_duplicates`, `suggest_customers`, `email_inbox_counts`. Triggers link e-mails waiting for a reference when that enquiry is created or imported, and release e-mails when an enquiry is deleted.
+
 ---
 
 ## 4. Daily workflow in the app
@@ -160,6 +178,12 @@ Reports (`20261104180409_report_functions.sql`):
 2. Once quoted, click *Mark quoted* in the register (sets today's date).
 3. On confirmation, open the enquiry, enter the buy/sell rates (totals auto-calculate from rate × units) and the confirmation date. Profit is calculated automatically.
 4. Mark dead enquiries as *Lost* (with a reason) so the follow-up lists stay clean.
+
+**From the pricing mailbox (Phase 7)**
+1. *Inbox → New enquiries*: each card shows what was read from the e-mail (customer, contact, route, qty, incoterm, requirements, attachments) and any existing enquiry of the same customer it may duplicate.
+2. *Create enquiry* (one click) or *Review & edit* (full form first). The reference is issued and the e-mails move to the enquiry.
+3. Reply to the customer with the reference in the subject. Every later message in the conversation is added to the enquiry's e-mail history automatically.
+4. *Needs review* holds what the system could not file confidently: link it, turn it into an enquiry, or ignore it.
 
 **Excel upload (transition period, or bulk updates)**
 1. *Import Excel*: choose the daily report or the monthly workbook. The app finds every sheet with the register header and pre-selects them, except `DATA*`.
@@ -265,6 +289,18 @@ Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions`
 | Parallel run | 2 weeks: the app issues references. Excel is updated by import/export only. Reconcile daily counts |
 | Cut-over | Freeze the Excel workbook (read-only archive), app becomes the system of record |
 
+### Phase 7 — E-mail intake (2–3 days + setup) 🟡
+Code written and tested (2026-11-04): migration applied and exercised end to end on a local Postgres with the Supabase schema stubbed (new enquiry → draft → one-click create; reference follow-ups; waiting references linked by an Excel import; automatic merge of a draft that staff created by hand; delete; RLS for anon / viewer / editor / service role). The Edge Function type-checks with Deno. Parsing, decisions and the sync run have 40 unit tests. The UI was clicked through against a mocked backend. Live setup done the same day: migration applied to `Enquiry_Tracker` (schema verified identical to the tested one), function deployed, mailbox registered, 5-minute pg_cron job running with its secret in Vault (wrong secrets are refused). Not yet done: the Google OAuth client and the Claude API key (README, "E-mail intake"), then a first live run against the mailbox; the Inbox screens go live when this branch is merged.
+
+| Task | Detail |
+|---|---|
+| Mailbox reading | Gmail API (read-only) with a refresh token of pricing@; every 5 minutes via pg_cron; lease against overlapping runs; checkpoint only moves when everything listed was stored |
+| Filing rules | SL reference in subject or new text → that enquiry; reply headers → same enquiry or draft; unknown reference → waits; promotions and auto-replies → ignored; the rest → Claude |
+| Claude | One structured-output call per remaining message (`claude-opus-5-5`, effort `low`, server-side fallback): new enquiry / follow-up / not an enquiry, plus customer, contact, trade type, qty, POL/POD, incoterm, commodity, weights, readiness, special requirements, sales person. PDFs and pictures are read too. A customer writing about an enquiry older than 45 days is re-checked, as it is often a new request |
+| Review UI | *Inbox* page (new enquiries, needs review, waiting for reference, recent follow-ups, ignored), one-click create, merge, dismiss, link; e-mail history and attachments on each enquiry |
+| No misses, no duplicates | Every message is stored (fallback: review); one row per Gmail message; replies attach to the pending draft; drafts fold into enquiries created by hand; same-customer duplicate check on each card |
+| **Done when** | The function runs on schedule against pricing@ and a week of new enquiries is created from the inbox without retyping |
+
 **Rough total:** about 2½–3 weeks of development, then the two-week parallel run.
 
 ---
@@ -278,3 +314,4 @@ Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions`
 5. **"PREVIOUS DAY'S CONFIRMATION" section** of the daily report. It lists the whole backlog of earlier open enquiries, not only those confirmed the previous day. Should the app's daily report do the same, or show only enquiries updated that day?
 6. `SL2655xx` references in `Sheet1`: a separate series, or scratch data that can be ignored?
 7. `SL262421` and `SL262664` are used twice. Which row keeps the reference?
+8. **E-mail intake:** confirm that pricing@ is a Google Workspace account (needed for an *Internal* OAuth app), and which Claude model to use. The default is `claude-opus-5-5`, an estimated 2–5 US cents per message it reads; Haiku is far cheaper.

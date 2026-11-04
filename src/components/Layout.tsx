@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
+import { fetchInboxCounts } from "../lib/api";
 import { initials } from "../lib/display";
 import { useRegisterExport } from "../pages/register/useRegisterExport";
 import { Icon, Logo } from "./icons";
@@ -7,9 +9,9 @@ import { Menu } from "./Menu";
 import { Alert, Button, buttonClass } from "./ui";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
-  `relative inline-flex h-14 items-center gap-2 px-3 text-body transition-colors duration-150 ${
+  `relative inline-flex h-14 items-center gap-2 px-2.5 text-body transition-colors duration-150 sm:px-3 ${
     isActive
-      ? "font-semibold text-primary after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
+      ? "font-semibold text-primary after:absolute after:inset-x-2.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary sm:after:inset-x-3"
       : "font-medium text-ink-heading hover:text-ink"
   }`;
 
@@ -20,6 +22,8 @@ export function Layout() {
   const exporter = useRegisterExport();
   const onRegister = pathname === "/enquiries";
   const name = profile?.full_name ?? session?.user.email ?? "Account";
+  const inbox = useQuery({ queryKey: ["inbox", "counts"], queryFn: fetchInboxCounts, refetchInterval: 60_000, enabled: !!profile });
+  const waiting = inbox.data ? inbox.data.drafts + inbox.data.review : 0;
 
   // Arrived from an invite or reset e-mail: choose a password before anything else. (After the hooks above.)
   if (mustSetPassword && pathname !== "/account") return <Navigate to="/account" replace />;
@@ -45,6 +49,16 @@ export function Layout() {
             <NavLink to="/reports" className={navClass}>
               <Icon name="chart" />
               <span className="sr-only md:not-sr-only">Reports</span>
+            </NavLink>
+            <NavLink to="/inbox" className={navClass} title="New enquiries and e-mails to review from the pricing mailbox">
+              <Icon name="inbox" />
+              <span className="sr-only md:not-sr-only">Inbox</span>
+              {waiting > 0 && (
+                <span className="rounded-full bg-selected px-1.5 text-meta font-medium tabular-nums text-primary">
+                  {waiting}
+                  <span className="sr-only"> waiting</span>
+                </span>
+              )}
             </NavLink>
           </nav>
 
