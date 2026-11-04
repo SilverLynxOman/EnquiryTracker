@@ -47,6 +47,10 @@ export function Layout() {
               <Icon name="register" />
               <span className="sr-only lg:not-sr-only">Register</span>
             </NavLink>
+            <NavLink to="/follow-ups" className={navClass} title="Quotes waiting 14 days or more: chase them or mark them lost">
+              <Icon name="bell" />
+              <span className="sr-only lg:not-sr-only">Follow-ups</span>
+            </NavLink>
             <NavLink to="/reports" className={navClass}>
               <Icon name="chart" />
               <span className="sr-only lg:not-sr-only">Reports</span>

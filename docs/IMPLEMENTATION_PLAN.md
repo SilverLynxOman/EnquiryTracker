@@ -206,7 +206,9 @@ RPCs: `merge_customers(keep, merge[], name)` (admins) moves enquiries, contacts,
 
 Status key: ✅ done · 🟡 code written, not yet run or verified · ⬜ not started
 
-### Phase 0 — Environment & accounts (½ day) ⬜
+### Phase 0 — Environment & accounts (½ day) ✅
+The repository, Supabase project and Cloudflare Pages site (with PR previews) are set up, and the app is live. Still to confirm in the dashboards: public sign-ups disabled in Supabase Auth, and `main` protected on GitHub.
+
 | Task | Detail |
 |---|---|
 | Install tools on the dev PC | Node.js 22 LTS, Git; the Supabase CLI runs via `npx supabase` |
@@ -216,7 +218,7 @@ Status key: ✅ done · 🟡 code written, not yet run or verified · ⬜ not st
 | **Done when** | `npm run dev` works locally and the empty app deploys to `*.pages.dev` |
 
 ### Phase 1 — Database foundation (1 day) ✅
-Applied to Supabase on 2026-11-02 (migrations `20261102162701_initial_schema`, `20261102162837_lock_trigger_functions`). Sales persons are seeded. A rolled-back smoke test passed: references, subject prefix, profit/status, import upsert with blank-preserving, audit, reports, and RLS for editor/viewer/anon. The security advisor shows only expected items. Remaining for this phase: invite the first admin.
+Applied to Supabase on 2026-11-02 (migrations `20261102162701_initial_schema`, `20261102162837_lock_trigger_functions`). Sales persons are seeded. A rolled-back smoke test passed: references, subject prefix, profit/status, import upsert with blank-preserving, audit, reports, and RLS for editor/viewer/anon. The security advisor shows only expected items. The first admin is set up.
 
 | Task | Detail |
 |---|---|
@@ -226,8 +228,8 @@ Applied to Supabase on 2026-11-02 (migrations `20261102162701_initial_schema`, `
 | Seed | `supabase/seed.sql`: sales persons |
 | **Done when** | Migration applied; Supabase security advisor shows no errors; first admin user invited and promoted |
 
-### Phase 2 — Core app: register + manual entry (2–3 days) 🟡
-Typecheck, 39 unit tests and production build pass (2026-11-03). Runs locally against Supabase. The screens behind the login are not yet clicked through, because that needs the first user account.
+### Phase 2 — Core app: register + manual entry (2–3 days) ✅
+Live and in use since 2026-11-04, with the register redesign (`docs/DESIGN.md`).
 
 | Task | Detail |
 |---|---|
@@ -238,7 +240,9 @@ Typecheck, 39 unit tests and production build pass (2026-11-03). Runs locally ag
 | Dashboard | Today and month-to-date: enquiries, quoted, confirmed, profit, conversion; follow-up lists (awaiting quote / awaiting confirmation, last 30 days); sales-person table for the month |
 | **Done when** | A user can record a full day's enquiries and confirmations without Excel; deployed on Pages |
 
-### Phase 3 — Excel import + historical load (2 days) 🟡
+### Phase 3 — Excel import + historical load (2 days) ✅
+The corrected 2026 file was imported on 2026-11-04 and verified: 2,785 enquiries, with enquiries, quoted, confirmed and profit per month (January to November) matching the file exactly. Still to review in the app: nine hand-typed profit differences, three confirmed jobs without a sell amount and three enquiries with dates out of order (§1.5).
+
 Dry run of the importer on the real workbooks (`npm run check-workbook -- <file>`, 2026-11-03), from `MONTHLY ENQUIRIES 2026 FINAL.1.xlsx`: 2,770 rows parsed, 2,768 importable, 2 excluded (`SL262421` reused for two customers), 223 empty pre-numbered rows ignored.
 - Enquiry / quoted / confirmed counts and buy / sell totals per month equal the Excel figures in §1.3. The only differences are the two excluded rows and the merged `SL262664`.
 - Profit differs where column N was typed by hand. See §1.5.
@@ -263,7 +267,9 @@ The three workbooks were compared by reference on 2026-11-04 (FINAL.1, the Octob
 | Reconciliation | Compare app monthly totals with §1.3, sheet by sheet; investigate every difference |
 | **Done when** | All 2026 data is in the app and the monthly totals match the Excel figures |
 
-### Phase 4 — Reports & exports (2–3 days) 🟡
+### Phase 4 — Reports & exports (2–3 days) ✅
+Live on the imported data since 2026-11-04. Done for good when management stops asking for the Excel reports.
+
 Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions` is applied to Supabase. It was smoke-tested in a rolled-back transaction: hand-checked totals, cancelled enquiries excluded, and no access for `anon`. Typecheck, 53 unit tests and the production build pass. A unit test feeds every report export back through the importer. The screens and exports were checked in a browser against a mocked backend. They have not yet been checked against real data, which needs the historical import and a login.
 - **Daily / weekly / monthly reports.** Enquiries raised in the period, then the earlier enquiries confirmed in it, plus counts, sales and profit. Weekly and monthly reports add the sales-person table and shipment-mode totals.
 - **Excel exports.** They use the register layout, with the old section titles (`PREVIOUS DAY'S` / `LAST WEEK'S` / `LAST MONTH'S CONFIRMATION`) and the `NO. OF ENQUIRIES` / `NO. OF CONFIRMATIONS` footer. Sheet names follow the old workbooks: `01.11`, `DATA1` + `DATA`, and `OCT` + `DATA`.
@@ -286,7 +292,7 @@ Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions`
 | Master-data screens | ✅ Customers (2026-11-04): *Customers* page with the full list (counts, former names, search, sort), rename (the old name is remembered), and **merge duplicates**: moves enquiries, contacts and e-mail drafts, records the old names as aliases so future imports and e-mails map to the kept customer. Merging is for admins. ⬜ Agents and sales persons: same tools |
 | Duplicate finder | ✅ *Possible duplicates* tab, grouped. Names are compared without legal forms (LLC, CO., SAOC…), "&", punctuation, spaces and plural S, then by trigram similarity (the `pg_trgm` measure; "likely" = 0.75), plus one-letter typos in names of six letters or more. On the 2026 register: 164 groups, 407 customers, e.g. `SYNERGIES CASTING` / `SYNERGIES CASTINGS`, seven spellings of `ADVANCE OILFIELD TECHNOLOGY`. Untick a name that is a different company, or mark a group *Not the same*. Runs in the browser (under 0.1 s for 874 names): the same self-join in Postgres cannot use a trigram index and took 3–6 s |
 | Ports | Port master + normalisation (`NHAVA SHEVA` → `NHAVA-SHEVA INDIA`) |
-| Follow-ups | Quoted > N days without confirmation → reminder list / optional daily e-mail (Supabase scheduled Edge Function); bulk "mark lost" for stale quotes |
+| Follow-ups | ✅ *Follow-ups* page (2026-11-04): open enquiries waiting 14 days or more (`STALE_DAYS` in `src/lib/followUps.ts`), in tabs by age: quoted 14–30 days ago, 31–90 days, over 90 days, and never quoted. Search and a sales-person filter (a sales user sees their own first). *Confirm job* per row; tick rows, or *Select all* in a tab, and *Mark lost…* with one reason, then *Undo*. Migration `20261104223652_follow_ups`: `close_enquiries_as_lost` closes only enquiries that are still open and returns their ids; `reopen_enquiries` undoes it. Both run as the caller (editors only), and the change history records the closure. A confirmation entered later still makes the job confirmed. The dashboard links to the page with the count. On 2026-11-04: 85 + 285 + 1,061 stale quotes and 22 enquiries never quoted. ⬜ Optional daily reminder e-mail: needs a way to send mail (an e-mail service, or the Gmail send permission) |
 | Commission | Parse `COMMISSION OMR 40/CNTR.` into structured `commission_amount`, `commission_currency`, `commission_per_unit` |
 
 ### Phase 6 — Hardening, rollout & cut-over (1–2 days + 2-week parallel run) ⬜
@@ -300,7 +306,7 @@ Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions`
 | Cut-over | Freeze the Excel workbook (read-only archive), app becomes the system of record |
 
 ### Phase 7 — E-mail intake (2–3 days + setup) 🟡
-Code written and tested (2026-11-04): migration applied and exercised end to end on a local Postgres with the Supabase schema stubbed (new enquiry → draft → one-click create; reference follow-ups; waiting references linked by an Excel import; automatic merge of a draft that staff created by hand; delete; RLS for anon / viewer / editor / service role). The Edge Function type-checks with Deno. Parsing, decisions and the sync run have 40 unit tests. The UI was clicked through against a mocked backend. Live setup done the same day: migration applied to `Enquiry_Tracker` (schema verified identical to the tested one), function deployed, mailbox registered, 5-minute pg_cron job running with its secret in Vault (wrong secrets are refused). Not yet done: the Google OAuth client and the Claude API key (README, "E-mail intake"), then a first live run against the mailbox; the Inbox screens go live when this branch is merged.
+Code written and tested (2026-11-04): migration applied and exercised end to end on a local Postgres with the Supabase schema stubbed (new enquiry → draft → one-click create; reference follow-ups; waiting references linked by an Excel import; automatic merge of a draft that staff created by hand; delete; RLS for anon / viewer / editor / service role). The Edge Function type-checks with Deno. Parsing, decisions and the sync run have 40 unit tests. The UI was clicked through against a mocked backend. Live setup done the same day: migration applied to `Enquiry_Tracker` (schema verified identical to the tested one), function deployed, mailbox registered, 5-minute pg_cron job running with its secret in Vault (wrong secrets are refused). Not yet done: the Google OAuth client and the Claude API key (README, "E-mail intake"), then a first live run against the mailbox. The Inbox screens are live (merged as #3).
 
 | Task | Detail |
 |---|---|

@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { SalespersonTable } from "../components/SalespersonTable";
 import { Alert, Card, Empty, Spinner, Stat } from "../components/ui";
-import { fetchFollowUps, fetchPeriodStats, fetchSalespersonSummary } from "../lib/api";
+import { countRegister, fetchFollowUps, fetchPeriodStats, fetchSalespersonSummary } from "../lib/api";
 import { displayName } from "../lib/display";
 import { addDays, errorMessage, firstOfMonth, fmtDate, fmtMoney, fmtPercent, todayIso } from "../lib/format";
+import { STALE_DAYS, staleQuoteFilters } from "../lib/followUps";
 import type { EnquiryRow, PeriodStats } from "../lib/types";
 
 function StatsRow({ title, stats }: { title: string; stats: PeriodStats | undefined }) {
@@ -26,9 +28,21 @@ function StatsRow({ title, stats }: { title: string; stats: PeriodStats | undefi
   );
 }
 
-function FollowUpList({ title, rows, count, dateOf }: { title: string; rows: EnquiryRow[]; count: number; dateOf: (r: EnquiryRow) => string | null }) {
+function FollowUpList({
+  title,
+  rows,
+  count,
+  dateOf,
+  actions,
+}: {
+  title: string;
+  rows: EnquiryRow[];
+  count: number;
+  dateOf: (r: EnquiryRow) => string | null;
+  actions?: ReactNode;
+}) {
   return (
-    <Card title={`${title} (${count})`}>
+    <Card title={`${title} (${count})`} actions={actions}>
       {rows.length === 0 ? (
         <Empty>Nothing waiting.</Empty>
       ) : (
@@ -59,6 +73,7 @@ export default function DashboardPage() {
   const people = useQuery({ queryKey: ["dashboard", "people", monthStart, today], queryFn: () => fetchSalespersonSummary(monthStart, today) });
   const awaitingQuote = useQuery({ queryKey: ["dashboard", "follow", "new", since], queryFn: () => fetchFollowUps("new", since) });
   const awaitingConfirm = useQuery({ queryKey: ["dashboard", "follow", "quoted", since], queryFn: () => fetchFollowUps("quoted", since) });
+  const stale = useQuery({ queryKey: ["dashboard", "stale-quotes", today], queryFn: () => countRegister(staleQuoteFilters(today)) });
 
   const error = todayStats.error ?? monthStats.error ?? people.error ?? awaitingQuote.error ?? awaitingConfirm.error;
 
@@ -80,6 +95,13 @@ export default function DashboardPage() {
           rows={awaitingConfirm.data?.rows ?? []}
           count={awaitingConfirm.data?.count ?? 0}
           dateOf={(r) => r.quoted_date}
+          actions={
+            !!stale.data && (
+              <Link to="/follow-ups" className="text-meta font-medium text-primary hover:underline">
+                {stale.data.toLocaleString()} waiting {STALE_DAYS}+ days → Follow-ups
+              </Link>
+            )
+          }
         />
       </div>
 
