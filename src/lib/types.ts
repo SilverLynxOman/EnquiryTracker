@@ -144,6 +144,34 @@ export interface PeriodStats {
   sell_total: number;
 }
 
+export type BreakdownDimension = "sales_person" | "customer" | "agent" | "lane" | "mode" | "trade_type";
+
+/** Row of the `enquiry_breakdown` RPC: enquiries raised in the range, grouped by one dimension. */
+export interface BreakdownRow {
+  label: string;
+  enquiries: number;
+  quoted: number;
+  confirmed: number;
+  lost: number;
+  sell_total: number;
+  profit: number;
+}
+
+/** Row of the `monthly_trend` RPC. */
+export interface MonthlyTrendRow {
+  /** First day of the month, YYYY-MM-DD. */
+  month: string;
+  /** Enquiries raised in the month, and of those: quoted, now confirmed, and their profit. */
+  enquiries: number;
+  quoted: number;
+  converted: number;
+  converted_profit: number;
+  /** Jobs confirmed in the month, whatever month the enquiry was raised in. */
+  confirmed: number;
+  confirmed_sell: number;
+  confirmed_profit: number;
+}
+
 export interface SalespersonSummaryRow {
   sales_person: string;
   total_enquiries: number;

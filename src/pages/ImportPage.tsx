@@ -118,6 +118,7 @@ export default function ImportPage() {
       queryClient.invalidateQueries({ queryKey: ["import-batches"] });
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["names"] });
       queryClient.invalidateQueries({ queryKey: ["sales-persons"] });
     }
@@ -134,7 +135,7 @@ export default function ImportPage() {
   return (
     <div className="space-y-4">
       <Card title="1. Choose the Excel file">
-        <div className="space-y-3 text-sm text-slate-600">
+        <div className="space-y-3 text-sm text-ink-muted">
           <p>
             Upload the <b>daily report</b> or the <b>monthly enquiries workbook</b>. The layout must match the register (header row with
             “MY REFERENCE”, columns A–S). Rows are matched on <b>MY REFERENCE</b>:
@@ -150,7 +151,7 @@ export default function ImportPage() {
             accept=".xlsx,.xlsm,.xls"
             disabled={!!busy}
             onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-            className="block text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-700"
+            className="block text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-primary-hover"
           />
         </div>
       </Card>
@@ -177,7 +178,7 @@ export default function ImportPage() {
             {sheets.map((s) => (
               <label
                 key={s.name}
-                className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${selected.includes(s.name) ? "border-indigo-300 bg-indigo-50" : "border-slate-200"}`}
+                className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${selected.includes(s.name) ? "border-primary/40 bg-selected" : "border-line"}`}
               >
                 <input
                   type="checkbox"
@@ -188,14 +189,14 @@ export default function ImportPage() {
                   }}
                 />
                 <span className="font-medium">{s.name}</span>
-                <span className="text-xs text-slate-500">
+                <span className="text-meta text-ink-muted">
                   {s.candidateRows} rows · {s.contextYear}
                 </span>
               </label>
             ))}
           </div>
           {sheets.some((s) => !s.suggested) && (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-meta text-ink-muted">
               Summary sheets (DATA…) are not pre-selected: their rows repeat the month sheets.
             </p>
           )}
@@ -223,7 +224,7 @@ export default function ImportPage() {
               count={counts.errors + counts.warnings}
               tone={counts.errors ? "rose" : "slate"}
             />
-            <span className="ml-auto self-center text-xs text-slate-500">
+            <span className="ml-auto self-center text-meta text-ink-muted">
               {analysis.rowsInFile} rows read · {analysis.skipped} empty pre-numbered rows ignored
             </span>
           </div>
@@ -243,8 +244,8 @@ export default function ImportPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="text-left text-xs uppercase text-slate-500">
-                <tr className="border-b border-slate-200">
+              <thead className="text-left text-meta text-ink-heading font-medium">
+                <tr className="border-b border-line">
                   <th className="py-1.5 pr-3">When</th>
                   <th className="pr-3">File</th>
                   <th className="pr-3">Sheets</th>
@@ -256,10 +257,10 @@ export default function ImportPage() {
               </thead>
               <tbody className="tabular-nums">
                 {batches.data.map((b) => (
-                  <tr key={b.id} className="border-b border-slate-100">
+                  <tr key={b.id} className="border-b border-line">
                     <td className="whitespace-nowrap py-1.5 pr-3">{fmtDateTime(b.created_at)}</td>
                     <td className="pr-3">{b.file_name}</td>
-                    <td className="pr-3 text-xs text-slate-500">{b.sheet_names.join(", ")}</td>
+                    <td className="pr-3 text-meta text-ink-muted">{b.sheet_names.join(", ")}</td>
                     <td className="pr-3 text-right">{b.inserted}</td>
                     <td className="pr-3 text-right">{b.updated}</td>
                     <td className="pr-3 text-right">{b.unchanged}</td>
@@ -279,7 +280,7 @@ const TONES = {
   emerald: "bg-emerald-100 text-emerald-800",
   amber: "bg-amber-100 text-amber-800",
   rose: "bg-rose-100 text-rose-800",
-  slate: "bg-slate-100 text-slate-700",
+  slate: "bg-table-head text-ink-heading",
 } as const;
 
 function TabButton({ active, onClick, label, count, tone }: { active: boolean; onClick: () => void; label: string; count: number; tone: keyof typeof TONES }) {
@@ -287,10 +288,10 @@ function TabButton({ active, onClick, label, count, tone }: { active: boolean; o
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-md px-3 py-1.5 ${active ? "bg-white shadow ring-1 ring-slate-300" : "text-slate-600 hover:bg-slate-100"}`}
+      className={`flex items-center gap-2 rounded-md px-3 py-1.5 ${active ? "bg-white shadow ring-1 ring-control" : "text-ink-muted hover:bg-row-hover"}`}
     >
       {label}
-      <span className={`rounded-full px-2 text-xs font-semibold ${TONES[tone]}`}>{count}</span>
+      <span className={`rounded-full px-2 text-meta font-semibold ${TONES[tone]}`}>{count}</span>
     </button>
   );
 }
@@ -299,8 +300,8 @@ function DiffTable({ items, showChanges }: { items: DiffItem[]; showChanges: boo
   if (!items.length) return <Empty>Nothing in this list.</Empty>;
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full text-xs">
-        <thead className="bg-slate-50 text-left uppercase text-slate-500">
+      <table className="min-w-full text-meta">
+        <thead className="bg-table-head text-left text-ink-heading font-medium">
           <tr>
             <th className="px-2 py-1.5">Sheet / row</th>
             <th className="px-2 py-1.5">Ref</th>
@@ -319,20 +320,20 @@ function DiffTable({ items, showChanges }: { items: DiffItem[]; showChanges: boo
             )}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-line">
           {items.slice(0, MAX_ROWS_SHOWN).map(({ row, changes }) => (
             <tr key={row.reference} className="align-top">
-              <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">
+              <td className="whitespace-nowrap px-2 py-1.5 text-ink-muted">
                 {row.sheet}!{row.rowNumber}
               </td>
-              <td className="px-2 py-1.5 font-mono">{row.reference}</td>
+              <td className="px-2 py-1.5 font-semibold tabular-nums">{row.reference}</td>
               <td className="whitespace-nowrap px-2 py-1.5">{fmtDate(row.enquiry_date)}</td>
               <td className="px-2 py-1.5">{row.customer_name}</td>
               {showChanges ? (
                 <td className="px-2 py-1.5">
                   {changes.map((c) => (
                     <div key={c.field}>
-                      <span className="text-slate-500">{c.label}:</span> <span className="text-rose-700 line-through">{c.from}</span> →{" "}
+                      <span className="text-ink-muted">{c.label}:</span> <span className="text-rose-700 line-through">{c.from}</span> →{" "}
                       <span className="text-emerald-700">{c.to}</span>
                     </div>
                   ))}
@@ -355,7 +356,7 @@ function DiffTable({ items, showChanges }: { items: DiffItem[]; showChanges: boo
         </tbody>
       </table>
       {items.length > MAX_ROWS_SHOWN && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-meta text-ink-muted">
           Showing the first {MAX_ROWS_SHOWN} of {items.length}. All of them will be imported.
         </p>
       )}
@@ -368,8 +369,8 @@ function IssuesTable({ invalid, warned }: { invalid: ParsedRow[]; warned: Parsed
   if (!rows.length) return <Empty>No problems found.</Empty>;
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full text-xs">
-        <thead className="bg-slate-50 text-left uppercase text-slate-500">
+      <table className="min-w-full text-meta">
+        <thead className="bg-table-head text-left text-ink-heading font-medium">
           <tr>
             <th className="px-2 py-1.5">Sheet / row</th>
             <th className="px-2 py-1.5">Ref</th>
@@ -378,13 +379,13 @@ function IssuesTable({ invalid, warned }: { invalid: ParsedRow[]; warned: Parsed
             <th className="px-2 py-1.5">Details</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-line">
           {rows.slice(0, MAX_ROWS_SHOWN).map(({ r, excluded }) => (
             <tr key={`${r.sheet}-${r.rowNumber}-${r.reference}`} className="align-top">
-              <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">
+              <td className="whitespace-nowrap px-2 py-1.5 text-ink-muted">
                 {r.sheet}!{r.rowNumber}
               </td>
-              <td className="px-2 py-1.5 font-mono">{r.reference}</td>
+              <td className="px-2 py-1.5 font-semibold tabular-nums">{r.reference}</td>
               <td className="px-2 py-1.5">{r.customer_name}</td>
               <td className="whitespace-nowrap px-2 py-1.5">
                 {excluded ? <span className="font-medium text-rose-700">Skipped</span> : <span className="text-amber-700">Imported</span>}
@@ -401,7 +402,7 @@ function IssuesTable({ invalid, warned }: { invalid: ParsedRow[]; warned: Parsed
         </tbody>
       </table>
       {rows.length > MAX_ROWS_SHOWN && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-meta text-ink-muted">
           Showing the first {MAX_ROWS_SHOWN} of {rows.length}.
         </p>
       )}

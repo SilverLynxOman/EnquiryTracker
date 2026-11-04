@@ -147,6 +147,9 @@ Design choices:
 | `enquiry_register` (view) | Enquiries joined with customer / agent / sales-person names, which is what the UI reads |
 
 RPC functions: `upsert_enquiry` (manual save), `import_enquiries` (batch upsert), `dashboard_stats`, `salesperson_summary` (the weekly `DATA` sheet), `resolve_customer` / `resolve_agent` / `resolve_sales_person`.
+Reports (`20261104180409_report_functions.sql`):
+- `monthly_trend` counts, month by month, the enquiries raised (and what became of them) and the jobs confirmed.
+- `enquiry_breakdown` groups the enquiries raised in a range by sales person, customer, agent, lane, mode or trade type.
 
 ---
 
@@ -213,7 +216,15 @@ Dry run of the importer on the real workbooks (`npm run check-workbook -- <file>
 | Reconciliation | Compare app monthly totals with §1.3, sheet by sheet; investigate every difference |
 | **Done when** | All 2026 data is in the app and the monthly totals match the Excel figures |
 
-### Phase 4 — Reports & exports (2–3 days) ⬜
+### Phase 4 — Reports & exports (2–3 days) 🟡
+Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions` is applied to Supabase. It was smoke-tested in a rolled-back transaction: hand-checked totals, cancelled enquiries excluded, and no access for `anon`. Typecheck, 53 unit tests and the production build pass. A unit test feeds every report export back through the importer. The screens and exports were checked in a browser against a mocked backend. They have not yet been checked against real data, which needs the historical import and a login.
+- **Daily / weekly / monthly reports.** Enquiries raised in the period, then the earlier enquiries confirmed in it, plus counts, sales and profit. Weekly and monthly reports add the sales-person table and shipment-mode totals.
+- **Excel exports.** They use the register layout, with the old section titles (`PREVIOUS DAY'S` / `LAST WEEK'S` / `LAST MONTH'S CONFIRMATION`) and the `NO. OF ENQUIRIES` / `NO. OF CONFIRMATIONS` footer. Sheet names follow the old workbooks: `01.11`, `DATA1` + `DATA`, and `OCT` + `DATA`.
+- **The earlier-confirmations section** lists only enquiries confirmed in the period, not the whole open backlog (see open question 5).
+- **Cancelled enquiries** are listed but not counted, as in the sales-person summary.
+- **Analytics.** Monthly trend, and a breakdown by sales person, customer, agent, lane, shipment mode or trade type.
+  - The trend's columns for enquiries raised in each month (enquiries, quoted, confirmed, profit) are counted the same way as the §1.3 table, so they can be used for the Phase 3 reconciliation.
+
 | Task | Detail |
 |---|---|
 | Daily report | Date picker → that day's enquiries + earlier enquiries confirmed that day + footer counts; Excel export in the current `Daily Report` layout |
