@@ -46,12 +46,12 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <form onSubmit={signIn} className="w-full max-w-sm space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <form onSubmit={signIn} className="w-full max-w-sm space-y-4 rounded-lg border border-line bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2">
           <img src="/favicon.svg" alt="" className="h-8 w-8" />
           <div>
-            <h1 className="font-semibold text-slate-900">Enquiry Tracker</h1>
-            <p className="text-xs text-slate-500">Sign in with your company account</p>
+            <h1 className="font-semibold text-ink">Enquiry Tracker</h1>
+            <p className="text-meta text-ink-muted">Sign in with your company account</p>
           </div>
         </div>
         {error && <Alert>{error}</Alert>}
@@ -72,7 +72,7 @@ export default function LoginPage() {
         <Button type="submit" className="w-full" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
         </Button>
-        <button type="button" onClick={resetPassword} className="w-full text-center text-xs text-slate-500 hover:text-slate-800">
+        <button type="button" onClick={resetPassword} className="w-full text-center text-meta text-ink-muted hover:text-ink">
           Forgot password?
         </button>
       </form>

@@ -298,6 +298,7 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
       queryClient.invalidateQueries({ queryKey: ["enquiry-emails"] });
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["names"] });
       queryClient.invalidateQueries({ queryKey: ["sales-persons"] });
       queryClient.invalidateQueries({ queryKey: ["audit", row.id] });
@@ -316,6 +317,7 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
       navigate("/enquiries", { replace: true });
     },
   });
@@ -374,13 +376,13 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/enquiries" className="text-sm text-slate-500 hover:text-slate-800">
+        <Link to="/enquiries" className="text-sm text-ink-muted hover:text-ink">
           ← Register
         </Link>
         <h1 className="text-lg font-semibold">
           {id ? (
             <>
-              <span className="font-mono">{existing.data?.reference}</span> {existing.data && <StatusBadge status={existing.data.status} />}
+              <span className="tabular-nums">{existing.data?.reference}</span> {existing.data && <StatusBadge status={existing.data.status} />}
             </>
           ) : draftId ? (
             "New enquiry from e-mail"
@@ -428,7 +430,7 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
         <Card title="Enquiry">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Reference" hint={id ? undefined : "Leave blank to issue the next number automatically"}>
-              {input("reference", { readOnly: !!id, placeholder: "auto", className: `${inputClass} font-mono` })}
+              {input("reference", { readOnly: !!id, placeholder: "auto", className: `${inputClass} tabular-nums` })}
             </Field>
             <Field label="Enquiry date *">{dateInput("enquiry_date")}</Field>
             <Field label="Quoted date">{dateInput("quoted_date")}</Field>
@@ -527,9 +529,9 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
               <input type="number" step="any" className={inputClass} value={form.sell_total} onChange={(e) => setTotal("sell_total", e.target.value)} />
             </Field>
           </div>
-          <div className="mt-4 flex items-baseline justify-between rounded-md bg-slate-50 px-3 py-2">
-            <span className="text-sm text-slate-600">Profit</span>
-            <span className={`text-xl font-semibold tabular-nums ${profit != null && profit < 0 ? "text-rose-600" : "text-slate-900"}`}>
+          <div className="mt-4 flex items-baseline justify-between rounded-md bg-table-head px-3 py-2">
+            <span className="text-sm text-ink-muted">Profit</span>
+            <span className={`text-xl font-semibold tabular-nums ${profit != null && profit < 0 ? "text-rose-600" : "text-ink"}`}>
               {profit == null ? "—" : `${fmtMoney(round2(profit))} ${form.currency}`}
             </span>
           </div>
@@ -540,7 +542,7 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
             <Field
               label="Subject"
               hint={
-                <button type="button" onClick={generateSubject} className="text-indigo-600 hover:underline">
+                <button type="button" onClick={generateSubject} className="text-primary hover:underline">
                   Fill from qty and ports
                 </button>
               }
@@ -606,8 +608,8 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 function showValue(field: string, v: unknown): ReactNode {
-  if (v == null || v === "") return <span className="text-slate-400">—</span>;
-  if (field.endsWith("_id")) return <span className="text-slate-400">(changed)</span>;
+  if (v == null || v === "") return <span className="text-ink-muted">—</span>;
+  if (field.endsWith("_id")) return <span className="text-ink-muted">(changed)</span>;
   if (field.endsWith("_date")) return fmtDate(String(v));
   return String(v);
 }
@@ -626,10 +628,10 @@ function AuditHistory({ enquiry }: { enquiry: EnquiryRow }) {
       ) : (
         <ol className="space-y-3 text-sm">
           {audit.data?.map((a) => (
-            <li key={a.id} className="border-l-2 border-slate-200 pl-3">
-              <div className="text-xs text-slate-500">
+            <li key={a.id} className="border-l-2 border-line pl-3">
+              <div className="text-meta text-ink-muted">
                 {fmtDateTime(a.changed_at)} · {who(a.changed_by)}
-                {a.import_batch_id && <span className="ml-1 rounded bg-slate-100 px-1">Excel import</span>}
+                {a.import_batch_id && <span className="ml-1 rounded bg-table-head px-1">Excel import</span>}
               </div>
               {a.action === "insert" && <div>Created</div>}
               {a.action === "delete" && <div>Deleted</div>}
@@ -637,14 +639,14 @@ function AuditHistory({ enquiry }: { enquiry: EnquiryRow }) {
                 <ul className="mt-0.5 space-y-0.5">
                   {Object.entries(a.changes as Record<string, { old: unknown; new: unknown }>).map(([field, c]) => (
                     <li key={field}>
-                      <span className="text-slate-500">{FIELD_LABELS[field] ?? field}:</span> {showValue(field, c.old)} → {showValue(field, c.new)}
+                      <span className="text-ink-muted">{FIELD_LABELS[field] ?? field}:</span> {showValue(field, c.old)} → {showValue(field, c.new)}
                     </li>
                   ))}
                 </ul>
               )}
             </li>
           ))}
-          <li className="pl-3 text-xs text-slate-400">
+          <li className="pl-3 text-meta text-ink-muted">
             Record created {fmtDateTime(enquiry.created_at)} ({enquiry.source === "import" ? "from Excel" : enquiry.source === "email" ? "from an e-mail" : "in the app"})
           </li>
         </ol>

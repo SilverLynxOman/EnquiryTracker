@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tansta
 import { useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
-import { ConfidenceBadge, EmailView, Pill } from "../components/EmailView";
-import { Alert, Button, Card, Empty, Spinner, inputClass } from "../components/ui";
+import { ConfidenceBadge, EmailView, Pill, shownName } from "../components/EmailView";
+import { Icon } from "../components/icons";
+import { Alert, Button, Card, Empty, Spinner, buttonClass, inputClass } from "../components/ui";
 import {
   checkMailNow,
   createEnquiryFromDraft,
@@ -19,15 +20,26 @@ import {
   setEmailIgnored,
   suggestCustomers,
 } from "../lib/api";
+import { fmtDateLong } from "../lib/display";
 import { draftToPayload } from "../lib/emailDrafts";
-import { errorMessage, fmtDate, fmtDateTime } from "../lib/format";
+import { errorMessage, fmtDateTime } from "../lib/format";
 import type { EmailListItem, EmailStatus, EnquiryDraft, InboxCounts, SyncResult } from "../lib/types";
 
 type Tab = "drafts" | "review" | "awaiting" | "linked" | "ignored";
 
 const TABS: { key: Tab; label: string; count?: (c: InboxCounts) => number; hint: string }[] = [
-  { key: "drafts", label: "New enquiries", count: (c) => c.drafts, hint: "New enquiries found in the mailbox. Check the details and create them in the register." },
-  { key: "review", label: "Needs review", count: (c) => c.review, hint: "E-mails the system could not file with confidence. Link each to its enquiry, turn it into a new enquiry, or ignore it." },
+  {
+    key: "drafts",
+    label: "New enquiries",
+    count: (c) => c.drafts,
+    hint: "New enquiries found in the mailbox, oldest first. Check the details and create them in the register.",
+  },
+  {
+    key: "review",
+    label: "Needs review",
+    count: (c) => c.review,
+    hint: "E-mails the system could not file with confidence. Link each to its enquiry, turn it into a new enquiry, or ignore it.",
+  },
   {
     key: "awaiting",
     label: "Waiting for reference",
@@ -44,6 +56,8 @@ const STATUS_OF_TAB: Record<Exclude<Tab, "drafts">, EmailStatus> = {
   linked: "linked",
   ignored: "ignored",
 };
+
+const refClass = "font-semibold tabular-nums text-primary hover:text-primary-hover hover:underline";
 
 function invalidateAll(qc: QueryClient) {
   for (const key of ["inbox", "register", "dashboard", "names", "enquiry-emails"]) qc.invalidateQueries({ queryKey: [key] });
@@ -78,56 +92,77 @@ export default function InboxPage() {
       setNotice(syncSummary(r));
       invalidateAll(queryClient);
     },
+    onError: () => invalidateAll(queryClient),
   });
 
   const current = TABS.find((t) => t.key === tab)!;
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h1 className="text-lg font-semibold">E-mail inbox</h1>
-        {mailbox && (
-          <span className="text-sm text-slate-500">
-            {mailbox.email} · {mailbox.last_synced_at ? `last checked ${fmtDateTime(mailbox.last_synced_at)}` : "not checked yet"}
-          </span>
-        )}
-        {canEdit && (
-          <Button className="ml-auto" variant="secondary" disabled={check.isPending} onClick={() => check.mutate()}>
-            {check.isPending ? "Checking mail…" : "Check mail now"}
-          </Button>
-        )}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line">
+        <nav aria-label="Inbox" className="-mb-px flex flex-wrap">
+          {TABS.map((t) => {
+            const n = t.count && counts.data ? t.count(counts.data) : null;
+            const active = t.key === tab;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                aria-current={active ? "page" : undefined}
+                onClick={() => {
+                  setNotice(null);
+                  setParams(t.key === "drafts" ? {} : { tab: t.key }, { replace: true });
+                }}
+                className={`inline-flex h-12 items-center gap-2 border-b-2 px-3 text-body transition-colors duration-150 ${
+                  active ? "border-primary font-semibold text-ink" : "border-transparent font-medium text-ink-heading hover:text-ink"
+                }`}
+              >
+                {t.label}
+                {n != null && (
+                  <span
+                    className={`rounded-full px-1.5 text-meta font-medium tabular-nums ${active ? "bg-selected text-primary" : "bg-table-head text-ink-heading"}`}
+                  >
+                    {n}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="ml-auto flex items-center gap-3 pb-1">
+          {mailbox && (
+            <span className="text-meta text-ink-muted">
+              {mailbox.email} · {mailbox.last_synced_at ? `last read ${fmtDateTime(mailbox.last_synced_at)}` : "not read yet"}
+            </span>
+          )}
+          {canEdit && (
+            <Button variant="secondary" loading={check.isPending} onClick={() => check.mutate()}>
+              {!check.isPending && <Icon name="refresh" />}
+              {check.isPending ? "Checking mail…" : "Check mail now"}
+            </Button>
+          )}
+        </div>
       </div>
 
       {!counts.isLoading && !counts.error && !mailbox && (
-        <Alert kind="info">
-          The mailbox is not connected yet. Follow “E-mail intake” in the README to connect Gmail; new mail is then read every few minutes.
-        </Alert>
+        <Alert kind="info">The mailbox is not connected yet. Follow “E-mail intake” in the README; new mail is then read every few minutes.</Alert>
       )}
       {mailbox?.last_error && <Alert kind="warning">The last mail check reported a problem: {mailbox.last_error}</Alert>}
       {counts.error && <Alert>{errorMessage(counts.error)}</Alert>}
-      {check.error && <Alert>{errorMessage(check.error)}</Alert>}
-      {notice && <Alert kind="success">{notice}</Alert>}
+      {check.error && <Alert>Checking the mailbox failed. {errorMessage(check.error)}</Alert>}
+      {notice && (
+        <Alert
+          kind="success"
+          action={
+            <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+              Dismiss
+            </Button>
+          }
+        >
+          {notice}
+        </Alert>
+      )}
 
-      <nav className="flex flex-wrap gap-1 border-b border-slate-200">
-        {TABS.map((t) => {
-          const n = t.count && counts.data ? t.count(counts.data) : null;
-          const active = t.key === tab;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => {
-                setNotice(null);
-                setParams(t.key === "drafts" ? {} : { tab: t.key }, { replace: true });
-              }}
-              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${active ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-600 hover:text-slate-900"}`}
-            >
-              {t.label}
-              {n != null && n > 0 && <span className="ml-1.5 rounded-full bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700">{n}</span>}
-            </button>
-          );
-        })}
-      </nav>
-      <p className="text-sm text-slate-500">{current.hint}</p>
+      <p className="text-meta text-ink-muted">{current.hint}</p>
 
       {tab === "drafts" ? (
         <DraftList mailbox={mailbox?.email} onNotice={setNotice} />
@@ -143,12 +178,17 @@ export default function InboxPage() {
 function DraftList({ mailbox, onNotice }: { mailbox?: string; onNotice: (n: ReactNode) => void }) {
   const drafts = useQuery({ queryKey: ["inbox", "drafts"], queryFn: fetchPendingDrafts, refetchInterval: 60_000 });
   if (drafts.isLoading) return <Spinner />;
-  if (drafts.error) return <Alert>{errorMessage(drafts.error)}</Alert>;
-  if (!drafts.data?.length) return <Empty>No new enquiries waiting. 🎉</Empty>;
+  if (drafts.error)
+    return (
+      <Alert action={<Button variant="secondary" size="sm" onClick={() => drafts.refetch()}>Try again</Button>}>
+        Loading the new enquiries failed. {errorMessage(drafts.error)}
+      </Alert>
+    );
+  if (!drafts.data?.length) return <Empty>No new enquiries waiting. New ones appear here a few minutes after they arrive.</Empty>;
   return (
-    <div className="space-y-4">
-      {drafts.data.map((d) => (
-        <DraftCard key={d.id} draft={d} mailbox={mailbox} onNotice={onNotice} />
+    <div className="space-y-3">
+      {drafts.data.map((d, i) => (
+        <DraftCard key={d.id} draft={d} mailbox={mailbox} onNotice={onNotice} first={i === 0} />
       ))}
     </div>
   );
@@ -157,19 +197,19 @@ function DraftList({ mailbox, onNotice }: { mailbox?: string; onNotice: (n: Reac
 function Detail({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
   return (
     <div className={wide ? "sm:col-span-2" : ""}>
-      <dt className="text-xs font-medium text-slate-500">{label}</dt>
-      <dd className="text-sm text-slate-900">{children || <span className="text-slate-400">—</span>}</dd>
+      <dt className="text-meta font-medium text-ink-heading">{label}</dt>
+      <dd className="text-body text-ink">{children || <span className="text-ink-muted">—</span>}</dd>
     </div>
   );
 }
 
-function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?: string; onNotice: (n: ReactNode) => void }) {
+function DraftCard({ draft, mailbox, onNotice, first }: { draft: EnquiryDraft; mailbox?: string; onNotice: (n: ReactNode) => void; first: boolean }) {
   const { canEdit } = useAuth();
   const queryClient = useQueryClient();
   const [customer, setCustomer] = useState(draft.customer_name ?? "");
   const [showEmails, setShowEmails] = useState(false);
   const f = draft.fields ?? {};
-  const first = draft.emails[0];
+  const firstEmail = draft.emails[0];
 
   const customers = useQuery({ queryKey: ["names", "customers"], queryFn: () => fetchNames("customers"), staleTime: 300_000, enabled: canEdit });
   const suggestions = useQuery({
@@ -189,11 +229,10 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
       done(
         <>
           Created{" "}
-          <Link to={`/enquiries/${row.id}`} className="font-mono font-semibold underline">
+          <Link to={`/enquiries/${row.id}`} className={refClass}>
             {row.reference}
           </Link>{" "}
-          for {row.subject ? row.subject.replace(row.reference, "").trim() : customer.toUpperCase()}. Reply to the customer with this reference in the subject so
-          follow-ups are filed automatically.
+          for {shownName(customer)}. Reply to the customer with this reference in the subject, so follow-ups are filed automatically.
         </>,
       ),
   });
@@ -203,7 +242,7 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
       done(
         <>
           The e-mails were added to{" "}
-          <Link to={`/enquiries/${r.enquiry_id}`} className="font-mono font-semibold underline">
+          <Link to={`/enquiries/${r.enquiry_id}`} className={refClass}>
             {r.reference}
           </Link>
           .
@@ -217,8 +256,9 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
   const busy = create.isPending || merge.isPending || dismiss.isPending;
   const error = create.error ?? merge.error ?? dismiss.error;
 
-  const exact = suggestions.data?.find((s) => s.score >= 0.95 && s.name.toUpperCase() === customer.trim().toUpperCase());
-  const similar = (suggestions.data ?? []).filter((s) => s.name.toUpperCase() !== customer.trim().toUpperCase());
+  const typed = customer.trim().toUpperCase();
+  const exact = suggestions.data?.find((s) => s.score >= 0.95 && s.name.toUpperCase() === typed);
+  const similar = (suggestions.data ?? []).filter((s) => s.name.toUpperCase() !== typed);
 
   function askMerge(defaultRef = "") {
     const ref = window.prompt("Add these e-mails to which enquiry? (reference, e.g. SL262759)", defaultRef);
@@ -233,47 +273,54 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
     <Card
       title={
         <span className="flex flex-wrap items-center gap-2">
-          <span>{draft.customer_name ?? draft.contact_name ?? draft.contact_email ?? "Unknown sender"}</span>
+          <span>{shownName(draft.customer_name) || draft.contact_name || draft.contact_email || "Unknown sender"}</span>
           <ConfidenceBadge value={draft.confidence} />
-          {draft.emails.length > 1 && <Pill className="bg-slate-100 text-slate-600 ring-slate-200">{draft.emails.length} e-mails</Pill>}
+          {draft.emails.length > 1 && <Pill className="bg-table-head text-ink-heading">{draft.emails.length} e-mails</Pill>}
         </span>
       }
-      actions={<span className="text-xs text-slate-500">received {fmtDateTime(draft.received_at)}</span>}
+      actions={<span className="text-meta tabular-nums text-ink-muted">Received {fmtDateTime(draft.received_at)}</span>}
     >
       <div className="space-y-3">
-        {draft.summary && <p className="text-sm text-slate-700">{draft.summary}</p>}
-        {first?.note && <Alert kind="info">{first.note}</Alert>}
+        {draft.summary && <p className="text-body text-ink">{draft.summary}</p>}
+        {firstEmail?.note && <Alert kind="info">{firstEmail.note}</Alert>}
 
-        <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="sm:col-span-2">
-            <dt className="text-xs font-medium text-slate-500">Customer *</dt>
+            <dt className="mb-1 text-meta font-medium text-ink-heading">
+              <label htmlFor={`customer-${draft.id}`}>Customer *</label>
+            </dt>
             <dd>
               {canEdit ? (
                 <input
+                  id={`customer-${draft.id}`}
                   className={inputClass}
                   value={customer}
                   onChange={(e) => setCustomer(e.target.value.toUpperCase())}
                   list={`customers-${draft.id}`}
                   placeholder="Customer name"
+                  autoComplete="off"
                 />
               ) : (
-                <span className="text-sm">{customer || "—"}</span>
+                <span className="text-body text-ink">{shownName(customer) || "—"}</span>
               )}
               <datalist id={`customers-${draft.id}`}>
                 {customers.data?.map((n) => <option key={n} value={n} />)}
               </datalist>
-              <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-slate-500">
+              <div className="mt-1 flex flex-wrap gap-x-2 text-meta text-ink-muted">
                 {exact ? (
-                  <span className="text-emerald-700">✓ Existing customer</span>
-                ) : customer.trim() ? (
+                  <span className="inline-flex items-center gap-1 text-confirmed">
+                    <Icon name="check" className="size-3.5" />
+                    Existing customer
+                  </span>
+                ) : typed ? (
                   <span>New customer{similar.length ? ". Or did you mean:" : ""}</span>
                 ) : (
-                  <span className="text-rose-600">Enter the customer before creating the enquiry{similar.length ? ". Suggestions:" : ""}</span>
+                  <span className="text-lost">Enter the customer before creating the enquiry{similar.length ? ". Suggestions:" : ""}</span>
                 )}
                 {!exact &&
                   similar.map((s) => (
-                    <button key={s.id} type="button" className="text-indigo-600 hover:underline" disabled={!canEdit} onClick={() => setCustomer(s.name)}>
-                      {s.name}
+                    <button key={s.id} type="button" className="text-primary hover:underline" disabled={!canEdit} onClick={() => setCustomer(s.name)}>
+                      {shownName(s.name)}
                     </button>
                   ))}
               </div>
@@ -281,21 +328,20 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
           </div>
           <Detail label="Contact">
             {[draft.contact_name, draft.contact_designation].filter(Boolean).join(", ")}
-            {draft.contact_email && <div className="text-xs text-slate-500">{draft.contact_email}</div>}
-            {draft.contact_phone && <div className="text-xs text-slate-500">{draft.contact_phone}</div>}
+            {draft.contact_email && <div className="text-meta text-ink-muted">{draft.contact_email}</div>}
+            {draft.contact_phone && <div className="text-meta text-ink-muted">{draft.contact_phone}</div>}
           </Detail>
-          <Detail label="Sales person">{draft.sales_person_name}</Detail>
-          <Detail label="Route">{[f.pol, f.pod].some(Boolean) ? `${f.pol ?? "?"} → ${f.pod ?? "?"}` : null}</Detail>
-          <Detail label="Qty / mode">{[f.qty_text, f.shipment_mode && f.shipment_mode !== f.qty_text ? f.shipment_mode : null, f.trade_type].filter(Boolean).join(" · ")}</Detail>
-          <Detail label="Enquiry date">{fmtDate(f.enquiry_date)}</Detail>
+          <Detail label="Sales person">{shownName(draft.sales_person_name)}</Detail>
+          <Detail label="Route">{[f.pol, f.pod].some(Boolean) ? `${shownName(f.pol) || "?"} → ${shownName(f.pod) || "?"}` : null}</Detail>
+          <Detail label="Shipment">
+            {[f.qty_text, f.shipment_mode && f.shipment_mode !== f.qty_text ? f.shipment_mode : null, f.trade_type].filter(Boolean).join(" · ")}
+          </Detail>
+          <Detail label="Enquiry date">{fmtDateLong(f.enquiry_date)}</Detail>
           <Detail label="Incoterm">{f.incoterm}</Detail>
           <Detail label="Subject" wide>
             {f.subject && (
-              <span className="font-mono text-xs">
-                <span className="text-slate-400" title="The reference is issued when the enquiry is created">
-                  SL······
-                </span>{" "}
-                {f.subject}
+              <span title="The reference is added when the enquiry is created">
+                <span className="text-ink-muted">SL…</span> {f.subject}
               </span>
             )}
           </Detail>
@@ -312,11 +358,11 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
             <ul className="space-y-1">
               {duplicates.data.map((d) => (
                 <li key={d.id} className="flex flex-wrap items-center gap-2">
-                  <Link to={`/enquiries/${d.id}`} className="font-mono underline">
+                  <Link to={`/enquiries/${d.id}`} className="font-semibold tabular-nums underline">
                     {d.reference}
                   </Link>
                   <span>
-                    {fmtDate(d.enquiry_date)} · {d.subject ?? d.customer_name}
+                    {fmtDateLong(d.enquiry_date)} · {d.subject ?? shownName(d.customer_name)}
                     {d.same_route && " · same route"}
                   </span>
                   {canEdit && (
@@ -334,13 +380,18 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
         <div className="flex flex-wrap items-center gap-2">
           {canEdit && (
             <>
-              <Button disabled={busy || !customer.trim()} onClick={() => create.mutate()} title="Create the enquiry with the details shown">
+              <Button
+                variant={first ? "primary" : "secondary"}
+                loading={create.isPending}
+                disabled={busy || !customer.trim()}
+                onClick={() => create.mutate()}
+                title="Create the enquiry with the details shown"
+              >
+                {!create.isPending && <Icon name="check" />}
                 {create.isPending ? "Creating…" : "Create enquiry"}
               </Button>
-              <Link
-                to={`/enquiries/new?draft=${draft.id}`}
-                className="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50"
-              >
+              <Link to={`/enquiries/new?draft=${draft.id}`} className={buttonClass("secondary")}>
+                <Icon name="edit" />
                 Review & edit
               </Link>
               <Button variant="secondary" disabled={busy} onClick={() => askMerge()}>
@@ -351,9 +402,9 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
               </Button>
             </>
           )}
-          <button type="button" className="ml-auto text-sm text-indigo-600 hover:underline" onClick={() => setShowEmails(!showEmails)}>
+          <Button variant="ghost" className="ml-auto" aria-expanded={showEmails} onClick={() => setShowEmails(!showEmails)}>
             {showEmails ? "Hide e-mail" : `Show e-mail${draft.emails.length > 1 ? `s (${draft.emails.length})` : ""}`}
-          </button>
+          </Button>
         </div>
 
         {showEmails && (
@@ -373,19 +424,30 @@ function DraftCard({ draft, mailbox, onNotice }: { draft: EnquiryDraft; mailbox?
 function EmailList({ status, mailbox, onNotice }: { status: EmailStatus; mailbox?: string; onNotice: (n: ReactNode) => void }) {
   const emails = useQuery({ queryKey: ["inbox", "emails", status], queryFn: () => fetchEmails(status), refetchInterval: 60_000 });
   if (emails.isLoading) return <Spinner />;
-  if (emails.error) return <Alert>{errorMessage(emails.error)}</Alert>;
+  if (emails.error)
+    return (
+      <Alert action={<Button variant="secondary" size="sm" onClick={() => emails.refetch()}>Try again</Button>}>
+        Loading the e-mails failed. {errorMessage(emails.error)}
+      </Alert>
+    );
   if (!emails.data?.length) return <Empty>Nothing here.</Empty>;
   return (
     <div className="space-y-3">
-      {status !== "review" && status !== "awaiting_enquiry" && emails.data.length >= 100 && (
-        <p className="text-xs text-slate-500">Showing the latest 100.</p>
-      )}
+      {(status === "linked" || status === "ignored") && emails.data.length >= 100 && <p className="text-meta text-ink-muted">Showing the latest 100.</p>}
       {emails.data.map((m) => (
         <EmailCard key={m.id} email={m} mailbox={mailbox} onNotice={onNotice} />
       ))}
     </div>
   );
 }
+
+const MATCH_LABELS: Record<NonNullable<EmailListItem["match_method"]>, string> = {
+  reference: "Matched by reference",
+  reply: "Reply in the conversation",
+  ai: "Read by Claude",
+  rule: "Rule",
+  manual: "Filed by hand",
+};
 
 function EmailCard({ email, mailbox, onNotice }: { email: EmailListItem; mailbox?: string; onNotice: (n: ReactNode) => void }) {
   const { canEdit } = useAuth();
@@ -403,7 +465,7 @@ function EmailCard({ email, mailbox, onNotice }: { email: EmailListItem; mailbox
         r.reference ? (
           <>
             Added to{" "}
-            <Link to={`/enquiries/${r.enquiry_id}`} className="font-mono font-semibold underline">
+            <Link to={`/enquiries/${r.enquiry_id}`} className={refClass}>
               {r.reference}
             </Link>
             .
@@ -425,27 +487,30 @@ function EmailCard({ email, mailbox, onNotice }: { email: EmailListItem; mailbox
   const error = link.error ?? toDraft.error ?? ignore.error;
 
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+    <div className="space-y-2 rounded-panel border border-line bg-surface p-3">
+      <div className="flex flex-wrap items-center gap-2 text-body">
         {email.enquiry && (
-          <Link to={`/enquiries/${email.enquiry.id}`} className="font-mono font-semibold text-indigo-700 hover:underline">
+          <Link to={`/enquiries/${email.enquiry.id}`} className={refClass}>
             {email.enquiry.reference}
           </Link>
         )}
         {email.status === "awaiting_enquiry" && email.sl_refs.length > 0 && (
-          <Pill className="bg-amber-50 text-amber-800 ring-amber-200">waiting for {email.sl_refs.join(", ")}</Pill>
+          <Pill className="bg-await-bg text-await">
+            <Icon name="clock" className="size-3.5" />
+            Waiting for {email.sl_refs.join(", ")}
+          </Pill>
         )}
-        {email.match_method && <Pill className="bg-white text-slate-600 ring-slate-200">{MATCH_LABELS[email.match_method]}</Pill>}
+        {email.match_method && <Pill className="bg-table-head text-ink-heading">{MATCH_LABELS[email.match_method]}</Pill>}
         <ConfidenceBadge value={email.match_method === "ai" ? email.confidence : null} />
         {email.suggested && email.status === "review" ? (
-          <span className="text-slate-600">
+          <span className="text-ink-muted">
             Probably a follow-up of{" "}
-            <Link to={`/enquiries/${email.suggested.id}`} className="font-mono underline">
+            <Link to={`/enquiries/${email.suggested.id}`} className={refClass}>
               {email.suggested.reference}
             </Link>
           </span>
         ) : (
-          email.note && <span className="text-slate-600">{email.note}</span>
+          email.note && <span className="text-ink-muted">{email.note}</span>
         )}
       </div>
 
@@ -456,25 +521,26 @@ function EmailCard({ email, mailbox, onNotice }: { email: EmailListItem; mailbox
         <div className="flex flex-wrap items-center gap-2">
           {email.status !== "linked" && (
             <form
-              className="flex items-center gap-1"
+              className="flex items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (reference.trim()) link.mutate(reference.trim());
               }}
             >
               <input
-                className={`${inputClass} w-36 font-mono`}
+                aria-label="Enquiry reference"
+                className={`${inputClass} w-36 tabular-nums`}
                 placeholder="SL26…"
                 value={reference}
                 onChange={(e) => setReference(e.target.value.toUpperCase())}
               />
-              <Button type="submit" variant="secondary" className="whitespace-nowrap" disabled={busy || !reference.trim()}>
+              <Button type="submit" variant="secondary" loading={link.isPending} disabled={busy || !reference.trim()}>
                 Link to enquiry
               </Button>
             </form>
           )}
           {(email.status === "review" || email.status === "ignored") && (
-            <Button variant="secondary" disabled={busy} onClick={() => toDraft.mutate()}>
+            <Button variant="secondary" loading={toDraft.isPending} disabled={busy} onClick={() => toDraft.mutate()}>
               It's a new enquiry
             </Button>
           )}
@@ -499,11 +565,3 @@ function EmailCard({ email, mailbox, onNotice }: { email: EmailListItem; mailbox
     </div>
   );
 }
-
-const MATCH_LABELS: Record<NonNullable<EmailListItem["match_method"]>, string> = {
-  reference: "matched by reference",
-  reply: "reply in the conversation",
-  ai: "read by Claude",
-  rule: "rule",
-  manual: "filed by hand",
-};

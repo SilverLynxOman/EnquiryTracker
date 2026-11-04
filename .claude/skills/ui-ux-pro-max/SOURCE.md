@@ -1,0 +1,1 @@
+Assembled from the npm package uipro-cli@2.2.3 (MIT, https://github.com/nextlevelbuilder/ui-ux-pro-max-skill): assets/scripts, assets/data and the Claude template. Precompiled __pycache__ files left out.

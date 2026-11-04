@@ -1,6 +1,8 @@
 import { supabase } from "./supabase";
 import type {
   AuditEntry,
+  BreakdownDimension,
+  BreakdownRow,
   CustomerSuggestion,
   DuplicateCandidate,
   EmailListItem,
@@ -13,6 +15,7 @@ import type {
   ImportBatch,
   ImportPayload,
   InboxCounts,
+  MonthlyTrendRow,
   NamedRef,
   PeriodStats,
   SalespersonSummaryRow,
@@ -74,8 +77,11 @@ export interface RegisterFilters {
   q: string;
 }
 
-function registerQuery(f: RegisterFilters, withCount: boolean) {
-  let q = supabase.from("enquiry_register").select("*", withCount ? { count: "exact" } : undefined);
+export type SortDirection = "asc" | "desc";
+
+/** The register's filters on one select. Counts and pages share it, so tab counts always match the table. */
+function filtered(f: RegisterFilters, columns: string, options?: { count: "exact"; head?: boolean }) {
+  let q = supabase.from("enquiry_register").select(columns, options);
   if (f.from) q = q.gte(f.basis, f.from);
   if (f.to) q = q.lte(f.basis, f.to);
   if (f.status) q = q.eq("status", f.status);
@@ -89,18 +95,42 @@ function registerQuery(f: RegisterFilters, withCount: boolean) {
         .join(","),
     );
   }
-  return q.order(f.basis, { ascending: false, nullsFirst: false }).order("reference", { ascending: false });
+  return q;
 }
 
-export async function queryRegister(f: RegisterFilters, page: number, pageSize: number) {
+/** Newest enquiry first by default; the reference breaks ties within a day. */
+function registerQuery(f: RegisterFilters, withCount: boolean, sort: SortDirection = "desc") {
+  const ascending = sort === "asc";
+  return filtered(f, "*", withCount ? { count: "exact" } : undefined)
+    .order("enquiry_date", { ascending })
+    .order("reference", { ascending });
+}
+
+export async function queryRegister(f: RegisterFilters, page: number, pageSize: number, sort: SortDirection = "desc") {
   const from = page * pageSize;
-  const { data, error, count } = await registerQuery(f, true).range(from, from + pageSize - 1);
+  const { data, error, count } = await registerQuery(f, true, sort).range(from, from + pageSize - 1);
   if (error) throw new Error(error.message);
-  return { rows: (data ?? []) as EnquiryRow[], count: count ?? 0 };
+  return { rows: (data ?? []) as unknown as EnquiryRow[], count: count ?? 0 };
 }
 
-export function fetchRegisterAll(f: RegisterFilters): Promise<EnquiryRow[]> {
-  return fetchAllPages<EnquiryRow>((from, to) => registerQuery(f, false).range(from, to));
+export function fetchRegisterAll(f: RegisterFilters, sort: SortDirection = "desc"): Promise<EnquiryRow[]> {
+  return fetchAllPages<EnquiryRow>((from, to) => registerQuery(f, false, sort).range(from, to));
+}
+
+export type StatusCounts = Record<Status | "all", number>;
+
+/** Number of enquiries per status under the other filters (the status filter itself is ignored). */
+export async function fetchStatusCounts(f: RegisterFilters): Promise<StatusCounts> {
+  const keys = ["all", "new", "quoted", "confirmed", "lost", "cancelled"] as const;
+  const results = await Promise.all(
+    keys.map((k) => filtered({ ...f, status: k === "all" ? "" : k }, "id", { count: "exact", head: true })),
+  );
+  const out = {} as StatusCounts;
+  results.forEach(({ count, error }, i) => {
+    if (error) throw new Error(error.message);
+    out[keys[i]] = count ?? 0;
+  });
+  return out;
 }
 
 export async function fetchFollowUps(status: "new" | "quoted", since: string, limit = 10) {
@@ -147,12 +177,17 @@ export async function fetchAudit(enquiryId: string): Promise<AuditEntry[]> {
 
 // --- Import ----------------------------------------------------------------
 
+/** Stored enquiries for the given references, with the fields protected from imports (edited in the app). */
 export async function fetchExistingByReferences(references: string[]): Promise<Map<string, EnquiryRow>> {
   const out = new Map<string, EnquiryRow>();
   for (let i = 0; i < references.length; i += 200) {
     const chunk = references.slice(i, i + 200);
-    const rows = unwrap<EnquiryRow[]>(await supabase.from("enquiry_register").select("*").in("reference", chunk));
-    for (const row of rows) out.set(row.reference, row);
+    const [rows, edited] = await Promise.all([
+      supabase.from("enquiry_register").select("*").in("reference", chunk).then((r) => unwrap<EnquiryRow[]>(r)),
+      supabase.from("enquiries").select("reference, app_edited_fields").in("reference", chunk).then((r) => unwrap<{ reference: string; app_edited_fields: string[] | null }[]>(r)),
+    ]);
+    const protectedBy = new Map(edited.map((e) => [e.reference, e.app_edited_fields ?? []]));
+    for (const row of rows) out.set(row.reference, { ...row, app_edited_fields: protectedBy.get(row.reference) ?? [] });
   }
   return out;
 }
@@ -193,7 +228,34 @@ export async function fetchPeriodStats(from: string, to: string): Promise<Period
 }
 
 export async function fetchSalespersonSummary(from: string, to: string): Promise<SalespersonSummaryRow[]> {
-  return unwrap(await supabase.rpc("salesperson_summary", { p_from: from, p_to: to }));
+  const rows = unwrap<SalespersonSummaryRow[]>(await supabase.rpc("salesperson_summary", { p_from: from, p_to: to }));
+  return rows.map((r) => ({ ...r, profit: Number(r.profit) }));
+}
+
+const ALL: Omit<RegisterFilters, "basis" | "from" | "to"> = { status: "", salesPersonId: "", mode: "", q: "" };
+
+/** For the daily / weekly / monthly reports: enquiries raised in the range, and jobs confirmed in it. */
+export async function fetchPeriodRows(from: string, to: string): Promise<{ raised: EnquiryRow[]; confirmed: EnquiryRow[] }> {
+  const [raised, confirmed] = await Promise.all([
+    fetchRegisterAll({ ...ALL, basis: "enquiry_date", from, to }),
+    fetchRegisterAll({ ...ALL, basis: "confirmed_date", from, to, status: "confirmed" }),
+  ]);
+  return { raised, confirmed };
+}
+
+export async function fetchBreakdown(from: string, to: string, dimension: BreakdownDimension): Promise<BreakdownRow[]> {
+  const rows = unwrap<BreakdownRow[]>(await supabase.rpc("enquiry_breakdown", { p_from: from, p_to: to, p_dimension: dimension }));
+  return rows.map((r) => ({ ...r, sell_total: Number(r.sell_total), profit: Number(r.profit) }));
+}
+
+export async function fetchMonthlyTrend(from: string, to: string): Promise<MonthlyTrendRow[]> {
+  const rows = unwrap<MonthlyTrendRow[]>(await supabase.rpc("monthly_trend", { p_from: from, p_to: to }));
+  return rows.map((r) => ({
+    ...r,
+    converted_profit: Number(r.converted_profit),
+    confirmed_sell: Number(r.confirmed_sell),
+    confirmed_profit: Number(r.confirmed_profit),
+  }));
 }
 
 // --- E-mail intake ---------------------------------------------------------
@@ -213,7 +275,7 @@ export async function fetchPendingDrafts(): Promise<EnquiryDraft[]> {
       .from("enquiry_drafts")
       .select(`*, emails:email_messages(${EMAIL_COLUMNS})`)
       .eq("status", "pending")
-      .order("received_at", { ascending: false })
+      .order("received_at", { ascending: true }) // a work queue: oldest first
       .limit(200),
   );
   for (const d of drafts) d.emails.sort((a, b) => a.received_at.localeCompare(b.received_at));

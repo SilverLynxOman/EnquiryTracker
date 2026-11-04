@@ -9,9 +9,12 @@ import EnquiryFormPage from "./pages/EnquiryFormPage";
 import InboxPage from "./pages/InboxPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ReportsLayout from "./pages/reports/ReportsLayout";
 
 // The importer pulls in the Excel library; load it only when the page is opened.
 const ImportPage = lazy(() => import("./pages/ImportPage"));
+const PeriodReportPage = lazy(() => import("./pages/reports/PeriodReportPage"));
+const AnalyticsPage = lazy(() => import("./pages/reports/AnalyticsPage"));
 
 export default function App() {
   return (
@@ -37,6 +40,14 @@ export default function App() {
             </Suspense>
           }
         />
+        <Route path="reports" element={<ReportsLayout />}>
+          <Route index element={<Navigate to="daily" replace />} />
+          {/* key: a fresh page (and picker state) per report type */}
+          <Route path="daily" element={<PeriodReportPage key="daily" kind="daily" />} />
+          <Route path="weekly" element={<PeriodReportPage key="weekly" kind="weekly" />} />
+          <Route path="monthly" element={<PeriodReportPage key="monthly" kind="monthly" />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+        </Route>
         <Route path="account" element={<AccountPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
