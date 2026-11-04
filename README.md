@@ -49,14 +49,33 @@ The Supabase CLI is run through `npx` (it cannot be installed with `npm install 
 
 ### 2. Database
 
-The project `Enquiry_Tracker` (`jaaueukrzijesejjaplt`) already has all migrations in `supabase/migrations/` applied, plus the sales persons from `supabase/seed.sql`. Future schema changes go in new migration files. Apply them with:
+The project `Enquiry_Tracker` (`jaaueukrzijesejjaplt`) already has every migration in `supabase/migrations/` applied, plus the sales persons from `supabase/seed.sql`.
+
+**Schema changes are applied automatically when a pull request is merged.** `.github/workflows/migrations.yml` does the work:
+
+- **When a pull request changes `supabase/migrations/`,** a dry run lists the migrations that merging would apply. It fails if Supabase has a version with no matching file here.
+- **After the merge to `main`,** it runs `supabase db push`, which applies only the new files. A re-run is harmless.
+- **To run it by hand:** Actions → *Database migrations* → *Run workflow*.
+
+One-time setup. In GitHub, go to *Settings → Secrets and variables → Actions → New repository secret* and add:
+
+| Secret | Where to get it |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens → *Generate new token* |
+| `SUPABASE_DB_PASSWORD` | The database password chosen when the project was created. You can reset it under *Project Settings → Database*. |
+
+To add a schema change, create a timestamped file and write the SQL in it:
+
+```bash
+npx supabase migration new add_something
+```
+
+Commit it in a pull request; it is applied when the pull request is merged. Never edit a migration that has already been applied. Add a new one instead.
+
+To apply migrations by hand (for example before the secrets are set up):
 
 ```bash
 npx supabase login
-```
-
-```bash
-npx supabase init
 ```
 
 ```bash
