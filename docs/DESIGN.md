@@ -90,7 +90,7 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 ## Components
 
 ### Navigation
-- **Left:** logo and application name, then Dashboard, Register, Reports, Inbox and Customers, each with an icon. The active item has 600 weight, violet text and a 2 px violet underline.
+- **Left:** logo and application name, then Dashboard, Register, Follow-ups, Reports, Inbox and Customers, each with an icon. The active item has 600 weight, violet text and a 2 px violet underline.
 - **Right:** Import (editors only), Export (on the Register page; it exports the filtered view), New enquiry (the one filled primary button), then the avatar menu (account, sign out).
 - **Narrow screens:** labels collapse to icons, and their accessible names stay. Navigation labels show from 1024 px, Import and Export labels from 1280 px. Below 640 px the bar has a 16 px gutter, and on the narrowest phones the navigation icons scroll inside the bar instead of widening the page.
 
@@ -119,6 +119,7 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 - **Hover:** `row-hover` background.
 - **Selection:** `selected` background, a 3 px violet marker on the left edge, a chevron in place of the ⋯ menu, a filled next-step button and `aria-current`. Hover and selection must look different.
 - **No decoration:** no icon repeated in every cell. Avatars are 24 px, neutral grey, and show initials.
+- **Scrolling tables:** a wrapper that scrolls a table sideways is `relative`, so screen-reader-only text in the table is positioned inside it and cannot widen the page. To hide a `Button` at some widths, put the visibility classes on a wrapper: the button's own `inline-flex` beats `hidden`.
 - **Narrow tables:** optional columns hide by the table's own width (container queries), so opening the drawer adjusts the table too. They go in this order: Sales & agent below 1040 px, Shipment below 880, Route below 720 (the route then shows under the customer), Profit below 600, Next step below 560, and Status below 460 (the badge then shows under the customer). Nothing is lost: everything is in the drawer.
 
 ### Status and waiting time
@@ -154,6 +155,12 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 - **Duplicate groups:** one table. Each group is a row group whose header says why the names match ("same name apart from punctuation or legal form", "similar spelling") and holds *Not the same* (ghost) and *Merge…* (outline). Every name starts ticked; unticking one turns the button into "Merge 2 ticked…".
 - **Merge dialog:** choose the customer to keep (most enquiries by default), optionally correct its name, and read what moves where before confirming.
 - **Counts link to the register**, searched for that customer over all dates.
+
+### Follow-ups page
+- **Tabs by age:** quoted 14–30 days ago (default), 31–90 days, over 90 days, not quoted. Counts follow the search and sales-person filter, like the status tabs.
+- **Rows:** reference over the quote date, customer over route, sales person, quote amount, waiting days, then *Confirm job* (outline) and the ⋯ menu (Confirm job, Mark lost…, Edit enquiry). Below 860 px of table width, *Confirm job* moves into the menu.
+- **Bulk:** the header tick box selects the page; *Select all N* selects the whole tab. *Mark lost…* opens a dialog with one reason (suggestions, free text). After saving, a success alert offers *Undo*; it stays until dismissed.
+- **Sales users** see their own enquiries first (`sp` in the URL overrides it).
 
 ### Feedback states
 - **Loading:** skeleton rows on first load. On refetch the previous rows stay in place at 60 % opacity, with no layout jump.

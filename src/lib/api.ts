@@ -169,6 +169,43 @@ export async function fetchStatusCounts(f: RegisterFilters): Promise<StatusCount
   return out;
 }
 
+// --- Follow-ups ------------------------------------------------------------
+
+/** One page of a follow-up band, ordered by its date (the quote, or the enquiry when never quoted). */
+export async function queryFollowUps(f: RegisterFilters, page: number, pageSize: number, sort: SortDirection = "desc") {
+  const from = page * pageSize;
+  const ascending = sort === "asc";
+  const { data, error, count } = await filtered(f, "*", { count: "exact" })
+    .order(f.basis, { ascending })
+    .order("reference", { ascending })
+    .range(from, from + pageSize - 1);
+  if (error) throw new Error(error.message);
+  return { rows: (data ?? []) as unknown as EnquiryRow[], count: count ?? 0 };
+}
+
+/** Number of enquiries under the filters (no rows fetched). */
+export async function countRegister(f: RegisterFilters): Promise<number> {
+  const { count, error } = await filtered(f, "id", { count: "exact", head: true });
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/** Ids of every enquiry under the filters, for "select all". */
+export async function fetchRegisterIds(f: RegisterFilters): Promise<string[]> {
+  const rows = await fetchAllPages<{ id: string }>((from, to) => filtered(f, "id").order("reference").range(from, to));
+  return rows.map((r) => r.id);
+}
+
+/** Closes open enquiries as lost. Returns the ids actually closed (confirmed or closed ones are skipped). */
+export async function closeEnquiriesAsLost(ids: string[], reason: string): Promise<string[]> {
+  return unwrap(await supabase.rpc("close_enquiries_as_lost", { p_ids: ids, p_reason: reason }));
+}
+
+/** Undo for closeEnquiriesAsLost. Returns how many were reopened. */
+export async function reopenEnquiries(ids: string[]): Promise<number> {
+  return unwrap(await supabase.rpc("reopen_enquiries", { p_ids: ids }));
+}
+
 export async function fetchFollowUps(status: "new" | "quoted", since: string, limit = 10) {
   const dateCol = status === "new" ? "enquiry_date" : "quoted_date";
   const { data, error, count } = await supabase

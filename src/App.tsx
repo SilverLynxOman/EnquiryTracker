@@ -7,6 +7,7 @@ import AccountPage from "./pages/AccountPage";
 import CustomersPage from "./pages/CustomersPage";
 import DashboardPage from "./pages/DashboardPage";
 import EnquiryFormPage from "./pages/EnquiryFormPage";
+import FollowUpsPage from "./pages/FollowUpsPage";
 import InboxPage from "./pages/InboxPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="enquiries" element={<RegisterPage />} />
         <Route path="enquiries/new" element={<EnquiryFormPage />} />
         <Route path="enquiries/:id" element={<EnquiryFormPage />} />
+        <Route path="follow-ups" element={<FollowUpsPage />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route
