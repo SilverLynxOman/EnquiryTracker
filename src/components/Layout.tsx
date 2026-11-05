@@ -21,6 +21,7 @@ export function Layout() {
   const navigate = useNavigate();
   const exporter = useRegisterExport();
   const onRegister = pathname === "/enquiries";
+  const onMasters = /^\/(customers|agents|ports)(\/|$)/.test(pathname);
   const name = profile?.full_name ?? session?.user.email ?? "Account";
   const inbox = useQuery({ queryKey: ["inbox", "counts"], queryFn: fetchInboxCounts, refetchInterval: 60_000, enabled: !!profile });
   const waiting = inbox.data ? inbox.data.drafts + inbox.data.review : 0;
@@ -65,10 +66,16 @@ export function Layout() {
                 </span>
               )}
             </NavLink>
-            <NavLink to="/customers" className={navClass} title="Customer list, renaming and merging duplicates">
+            {/* One item for the Customers, Agents and Ports tabs (MastersLayout). */}
+            <Link
+              to="/customers"
+              className={navClass({ isActive: onMasters })}
+              aria-current={onMasters ? "page" : undefined}
+              title="Customers, agents and ports: lists, renaming and merging duplicates"
+            >
               <Icon name="users" />
-              <span className="sr-only lg:not-sr-only">Customers</span>
-            </NavLink>
+              <span className="sr-only lg:not-sr-only">Masters</span>
+            </Link>
           </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">

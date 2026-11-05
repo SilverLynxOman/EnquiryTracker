@@ -22,7 +22,7 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 | Import Excel | Upload the daily report or monthly workbook. Preview new / changed / unchanged / invalid rows, then import. The original file is archived |
 | Follow-ups | Quotes waiting 14 days or more, by age (14–30 days, 31–90, over 90) and enquiries never quoted; filter by sales person; confirm the job, or tick rows and mark them lost with a reason (with undo) |
 | Reports | Daily, weekly (Sat–Fri) and monthly reports: enquiries raised plus earlier ones confirmed, sales-person and mode totals; Excel export in the old report layouts. Analytics: monthly trend and profit chart; conversion and profit by sales person, customer, agent, lane, mode or trade type |
-| Customers | Every customer with enquiry counts and former names; rename; **possible duplicates** grouped by similar spelling, merged in one step (admins). Old names are remembered, so imports and e-mails still find the customer |
+| Masters | **Customers**, **Agents** and **Ports**: every name with its counts; rename; **possible duplicates** grouped by similar spelling, merged in one step (admins). Old names and spellings are remembered, so imports and e-mails still find them; a remembered port spelling becomes the standard name whenever it is typed or imported |
 | Inbox | New enquiries read from the pricing mailbox, ready to create with one click; e-mails to review; every enquiry keeps its e-mail history (see [E-mail intake](#e-mail-intake)) |
 | Users and roles | Admins only, from the avatar menu: every staff login with its e-mail address and last sign-in; change its role or the sales person it is linked to in place. Asks before a second login is linked to the same sales person |
 
