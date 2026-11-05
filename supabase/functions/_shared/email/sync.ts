@@ -29,6 +29,16 @@ export interface SyncDb {
   knownIds(ids: string[]): Promise<Set<string>>;
   matchContext(input: MatchInput): Promise<MatchContext>;
   ingest(payload: IngestPayload): Promise<{ status: string; duplicate?: boolean }>;
+  /** Re-classify: stored e-mails waiting for review without Claude's classification, oldest first. */
+  unclassified(limit: number): Promise<UnclassifiedEmail[]>;
+  /** Re-classify: replaces stored row `emailId` with `payload`, only while it is still unclassified and untouched. */
+  reingest(emailId: string, payload: IngestPayload): Promise<{ status?: string; skipped?: boolean }>;
+}
+
+export interface UnclassifiedEmail {
+  id: string;
+  gmail_message_id: string;
+  gmail_thread_id: string;
 }
 
 export interface SyncGmail {
@@ -116,7 +126,29 @@ const emptyStats = (): SyncStats => ({
   error_messages: [],
 });
 
+export interface ReclassifyStats {
+  candidates: number;
+  processed: number;
+  linked: number;
+  draft: number;
+  awaiting_enquiry: number;
+  review: number;
+  ignored: number;
+  /** Handled by staff (or replaced) while this run was working: left as it is. */
+  skipped: number;
+  ai_calls: number;
+  deferred: number;
+  errors: number;
+  error_messages: string[];
+}
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Counts a filed message under its status (linked, draft, review, ...). */
+function countStatus(stats: { processed: number }, status: string) {
+  stats.processed++;
+  if (status in stats && status !== "processed") (stats as unknown as Record<string, number>)[status]++;
+}
 
 export function bytesToBase64(bytes: Uint8Array): string {
   let bin = "";
@@ -142,10 +174,11 @@ async function pool<T>(items: T[], size: number, work: (item: T) => Promise<void
 type RawAttachment = AttachmentMeta & { data?: string };
 
 export async function runSync(deps: SyncDeps): Promise<SyncStats> {
-  const { options: o, gmail, db, storage, classify } = deps;
+  const { options: o, gmail, db } = deps;
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? (() => {});
   const stats = emptyStats();
+  const processMessage = messageProcessor(deps, stats, log);
   const started = now();
   const deadline = started.getTime() + o.timeBudgetMs;
 
@@ -176,10 +209,7 @@ export async function runSync(deps: SyncDeps): Promise<SyncStats> {
         startedCount++;
         try {
           const status = await processMessage(id);
-          if (status) {
-            stats.processed++;
-            if (status in stats) (stats as unknown as Record<string, number>)[status]++;
-          }
+          if (status) countStatus(stats, status);
         } catch (e) {
           stats.errors++;
           if (stats.error_messages.length < 5) stats.error_messages.push(`${id}: ${message(e)}`);
@@ -200,8 +230,74 @@ export async function runSync(deps: SyncDeps): Promise<SyncStats> {
   }
   if (fatal) throw new Error(fatal);
   return stats;
+}
 
-  async function processMessage(id: string): Promise<string | null> {
+/**
+ * Re-classifies stored e-mails that went to review without Claude's classification ("Not classified: ..."),
+ * oldest first: fetches each from Gmail again, classifies it like new mail and replaces the stored row via
+ * db.reingest. A message Claude still cannot classify is left as it is (counted in errors). Does not take
+ * the mailbox lease or touch the checkpoint, so it can run next to the scheduled sync; reingest only
+ * replaces a row that is still unclassified, so a row handled meanwhile is skipped.
+ */
+export async function runReclassify(deps: SyncDeps, limit: number): Promise<ReclassifyStats> {
+  const { options: o, db, classify } = deps;
+  if (!classify) throw new Error("Claude is not configured (ANTHROPIC_API_KEY): nothing can be re-classified");
+  const now = deps.now ?? (() => new Date());
+  const log = deps.log ?? (() => {});
+  const stats: ReclassifyStats = {
+    candidates: 0,
+    processed: 0,
+    linked: 0,
+    draft: 0,
+    awaiting_enquiry: 0,
+    review: 0,
+    ignored: 0,
+    skipped: 0,
+    ai_calls: 0,
+    deferred: 0,
+    errors: 0,
+    error_messages: [],
+  };
+  const deadline = now().getTime() + o.timeBudgetMs;
+
+  const rows = await db.unclassified(Math.max(1, Math.min(Math.floor(limit) || 1, o.maxMessages)));
+  stats.candidates = rows.length;
+
+  // Same conversation in order (oldest first, as returned); conversations in parallel.
+  const threads = new Map<string, UnclassifiedEmail[]>();
+  for (const r of rows) threads.set(r.gmail_thread_id, [...(threads.get(r.gmail_thread_id) ?? []), r]);
+
+  const processMessage = messageProcessor(deps, stats, log);
+  await pool([...threads.values()], o.concurrency, async (items) => {
+    for (const r of items) {
+      if (now().getTime() > deadline) {
+        stats.deferred++;
+        continue;
+      }
+      try {
+        const status = await processMessage(r.gmail_message_id, r.id);
+        if (status === "skipped") stats.skipped++;
+        else if (status) countStatus(stats, status);
+      } catch (e) {
+        stats.errors++;
+        if (stats.error_messages.length < 5) stats.error_messages.push(`${r.gmail_message_id}: ${message(e)}`);
+        log(`re-classifying ${r.gmail_message_id} failed: ${message(e)}`);
+      }
+    }
+  });
+  return stats;
+}
+
+/**
+ * Fetches, classifies and stores one Gmail message; returns the stored status, or null when there was
+ * nothing to store. With `replace` (the id of the stored row) the message is re-classified instead: the
+ * "already stored" check is skipped, a failed classification throws (the stored row stays as it is) and
+ * the row is replaced through db.reingest, which returns "skipped" when staff handled it meanwhile.
+ */
+function messageProcessor(deps: SyncDeps, counters: { ai_calls: number }, log: (m: string) => void) {
+  const { options: o, gmail, db, storage, classify } = deps;
+
+  return async function processMessage(id: string, replace?: string): Promise<string | null> {
     const raw = await gmail.getMessage(id);
     if (raw.labelIds?.includes("DRAFT")) return null;
     const email = parseGmailMessage(raw, { mailbox: o.mailbox, internalDomains: o.internalDomains });
@@ -214,7 +310,7 @@ export async function runSync(deps: SyncDeps): Promise<SyncStats> {
       customer_email: email.sender_type === "external" ? email.from_email : null,
       participants: [email.from_email, ...email.to_emails, ...email.cc_emails].filter((x): x is string => !!x),
     });
-    if (ctx.already_ingested) return null;
+    if (ctx.already_ingested && !replace) return null;
 
     const downloaded = new Map<RawAttachment, Uint8Array>();
     const download = async (a: RawAttachment): Promise<Uint8Array> => {
@@ -233,6 +329,7 @@ export async function runSync(deps: SyncDeps): Promise<SyncStats> {
     if (plan.kind === "final") {
       outcome = plan.outcome;
     } else if (!classify) {
+      if (replace) throw new Error("Claude is not configured (ANTHROPIC_API_KEY)");
       outcome = decideWithoutAi(plan.recheck, "Not classified: Claude is not configured (ANTHROPIC_API_KEY)");
     } else {
       try {
@@ -244,10 +341,11 @@ export async function runSync(deps: SyncDeps): Promise<SyncStats> {
             log(`attachment ${a.filename} of ${id} not read: ${message(e)}`);
           }
         }
-        stats.ai_calls++;
+        counters.ai_calls++;
         const answer = await classify({ email, ctx, attachments: files });
         outcome = decideWithAi(email, ctx, normaliseAiResult(answer, ctx), plan.recheck);
       } catch (e) {
+        if (replace) throw new Error(`still not classified: ${message(e)}`.slice(0, 500));
         log(`classification of ${id} failed: ${message(e)}`);
         outcome = decideWithoutAi(plan.recheck, `Not classified: ${message(e)}`.slice(0, 500));
       }
@@ -274,6 +372,11 @@ export async function runSync(deps: SyncDeps): Promise<SyncStats> {
       label_ids: email.label_ids,
     };
     const payload: IngestPayload = { mailbox_email: o.mailbox, email: row, ...outcome };
+    if (replace) {
+      // No fallback here: if the new version cannot be stored, the old row stays (one transaction).
+      const result = await db.reingest(replace, payload);
+      return result.skipped ? "skipped" : (result.status ?? null);
+    }
     try {
       return (await db.ingest(payload)).status;
     } catch (e) {
@@ -292,7 +395,7 @@ export async function runSync(deps: SyncDeps): Promise<SyncStats> {
       };
       return (await db.ingest({ ...payload, decision: fallback, new_draft: null })).status;
     }
-  }
+  };
 
   async function keepAttachments(
     email: ParsedEmail,

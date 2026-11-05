@@ -1,15 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_OPTIONS, runSync, type IngestPayload, type MatchInput, type SyncDeps, type SyncStats } from "./sync.ts";
+import {
+  DEFAULT_OPTIONS,
+  runReclassify,
+  runSync,
+  type IngestPayload,
+  type MatchInput,
+  type SyncDeps,
+  type SyncStats,
+  type UnclassifiedEmail,
+} from "./sync.ts";
 import { aiAnswer, emptyContext, gmailMessage } from "./testFixtures.ts";
 import type { GmailMessage, MatchContext } from "./types.ts";
 
 interface Harness {
   deps: SyncDeps;
   ingested: IngestPayload[];
+  reingested: { emailId: string; payload: IngestPayload }[];
   uploads: string[];
   matchInputs: MatchInput[];
   ended: { syncFrom: string | null; error: string | null; stats: SyncStats }[];
   listQueries: string[];
+  unclassifiedLimits: number[];
 }
 
 function harness(
@@ -21,9 +32,21 @@ function harness(
     ingestFails?: (p: IngestPayload) => boolean;
     lease?: { sync_from: string | null } | null;
     options?: Partial<SyncDeps["options"]>;
+    /** Stored unclassified e-mails, oldest first (what db.unclassified returns). */
+    unclassified?: UnclassifiedEmail[];
+    /** Rows reingest reports as handled meanwhile. */
+    handled?: string[];
   } = {},
 ): Harness {
-  const h: Harness = { ingested: [], uploads: [], matchInputs: [], ended: [], listQueries: [] } as unknown as Harness;
+  const h: Harness = {
+    ingested: [],
+    reingested: [],
+    uploads: [],
+    matchInputs: [],
+    ended: [],
+    listQueries: [],
+    unclassifiedLimits: [],
+  } as unknown as Harness;
   const byId = new Map(messages.map((m) => [m.id, m]));
   h.deps = {
     options: { ...DEFAULT_OPTIONS, mailbox: "pricing@silverlynx.test", internalDomains: ["silverlynx.test"], ...opts.options },
@@ -58,6 +81,15 @@ function harness(
       async ingest(p) {
         if (opts.ingestFails?.(p)) throw new Error("check constraint");
         h.ingested.push(p);
+        return { status: p.new_draft ? "draft" : p.decision.status };
+      },
+      async unclassified(limit) {
+        h.unclassifiedLimits.push(limit);
+        return (opts.unclassified ?? []).slice(0, limit);
+      },
+      async reingest(emailId, p) {
+        if (opts.handled?.includes(emailId)) return { email_id: emailId, skipped: true } as { skipped: boolean };
+        h.reingested.push({ emailId, payload: p });
         return { status: p.new_draft ? "draft" : p.decision.status };
       },
     },
@@ -161,5 +193,81 @@ describe("runSync", () => {
     };
     await expect(runSync(h.deps)).rejects.toThrow("Google sign-in failed");
     expect(h.ended[0]).toMatchObject({ syncFrom: null, error: "Google sign-in failed (400)" });
+  });
+});
+
+describe("runReclassify", () => {
+  const stored = (id: string, threadId: string): UnclassifiedEmail => ({ id: `row-${id}`, gmail_message_id: id, gmail_thread_id: threadId });
+  const messages = () => [
+    gmailMessage({ id: "a", threadId: "t1", ...at("2026-11-04T10:30:00Z") }),
+    gmailMessage({ id: "b", threadId: "t1", subject: "RE: SL262700", ...at("2026-11-04T11:00:00Z") }),
+    gmailMessage({ id: "c", threadId: "t2", ...at("2026-11-04T10:45:00Z") }),
+  ];
+  // Every message is already stored: that must not stop a re-classification.
+  const storedContext = (input: MatchInput): Partial<MatchContext> => ({
+    already_ingested: true,
+    ...(input.sl_refs.includes("SL262700")
+      ? { ref_matches: [{ reference: "SL262700", enquiry_id: "e1", enquiry_date: "2026-11-01", status: "new" }] }
+      : {}),
+  });
+
+  it("re-files stored e-mails with Claude through reingest, oldest first per conversation, without touching the mailbox", async () => {
+    const h = harness(messages(), {
+      context: storedContext,
+      unclassified: [stored("a", "t1"), stored("c", "t2"), stored("b", "t1")],
+    });
+    const stats = await runReclassify(h.deps, 40);
+    const order = h.reingested.map((r) => r.emailId);
+    expect([...order].sort()).toEqual(["row-a", "row-b", "row-c"]);
+    expect(order.indexOf("row-a")).toBeLessThan(order.indexOf("row-b"));
+    const byRow = (id: string) => h.reingested.find((r) => r.emailId === id)!.payload;
+    expect(byRow("row-a")).toMatchObject({ decision: { status: "draft", classification: "new_enquiry" }, new_draft: { customer_name: "EXAMPLE TRADING LLC" } });
+    expect(byRow("row-b")).toMatchObject({ decision: { status: "linked", enquiry_id: "e1" }, new_draft: null });
+    expect(h.ingested).toEqual([]);
+    expect(h.ended).toEqual([]); // no lease, checkpoint or last-sync change
+    expect(stats).toMatchObject({ candidates: 3, processed: 3, draft: 2, linked: 1, ai_calls: 2, skipped: 0, errors: 0, deferred: 0 });
+  });
+
+  it("leaves the stored e-mail as it is when Claude still fails", async () => {
+    const h = harness([gmailMessage({ id: "x" })], {
+      context: () => ({ already_ingested: true }),
+      unclassified: [stored("x", "t1")],
+      classify: async () => {
+        throw new Error("overloaded");
+      },
+    });
+    const stats = await runReclassify(h.deps, 40);
+    expect(h.reingested).toEqual([]);
+    expect(h.ingested).toEqual([]);
+    expect(stats).toMatchObject({ candidates: 1, processed: 0, errors: 1 });
+    expect(stats.error_messages[0]).toBe("x: still not classified: overloaded");
+  });
+
+  it("refuses to run without Claude", async () => {
+    const h = harness([gmailMessage({ id: "x" })], { unclassified: [stored("x", "t1")], classify: null });
+    await expect(runReclassify(h.deps, 40)).rejects.toThrow(/not configured/);
+    expect(h.reingested).toEqual([]);
+  });
+
+  it("counts e-mails handled meanwhile as skipped and caps the batch size", async () => {
+    const h = harness(messages(), {
+      context: storedContext,
+      unclassified: [stored("a", "t1"), stored("c", "t2"), stored("b", "t1")],
+      handled: ["row-c"],
+    });
+    const stats = await runReclassify(h.deps, 5000);
+    expect(h.unclassifiedLimits).toEqual([DEFAULT_OPTIONS.maxMessages]);
+    expect(stats).toMatchObject({ candidates: 3, processed: 2, skipped: 1, errors: 0 });
+  });
+
+  it("defers what does not fit in the time budget", async () => {
+    const h = harness(messages(), {
+      context: storedContext,
+      unclassified: [stored("a", "t1"), stored("c", "t2")],
+      options: { timeBudgetMs: -1 },
+    });
+    const stats = await runReclassify(h.deps, 40);
+    expect(h.reingested).toEqual([]);
+    expect(stats).toMatchObject({ candidates: 2, processed: 0, deferred: 2 });
   });
 });
