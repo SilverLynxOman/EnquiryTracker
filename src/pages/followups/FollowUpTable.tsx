@@ -77,11 +77,7 @@ export function FollowUpTable({
       : []),
     ...(canEdit && quoted ? [{ label: "Confirm job…", icon: "check" as const, onSelect: () => onConfirm(r) }] : []),
     ...(canEdit ? [{ label: "Mark lost…", icon: "close" as const, onSelect: () => onMarkLost(r) }] : []),
-    {
-      label: canEdit ? "Edit enquiry" : "Open full record",
-      icon: canEdit ? ("edit" as const) : ("external" as const),
-      onSelect: () => navigate(`/enquiries/${r.id}`),
-    },
+    { label: "Open enquiry", icon: "external" as const, onSelect: () => navigate(`/enquiries/${r.id}`) },
   ];
   const colCount = canEdit ? 7 : 6;
   const dateWord = quoted ? "Quoted" : "Received";

@@ -237,7 +237,7 @@ export default function QuoteWindowPage({ salesPersonId }: { salesPersonId: stri
             staleLink={staleLink}
             onQuoted={(e) => quote.mutate(e)}
             onChase={(e, done) => chase.mutate({ e, done })}
-            onWon={(e) => navigate(`/enquiries/${e.id}?confirm=1`)}
+            onWon={(e) => navigate(`/enquiries/${e.id}/edit?confirm=1`)}
             onMarkLost={(e) => (markLost.reset(), setClosing(e))}
           />
         </div>

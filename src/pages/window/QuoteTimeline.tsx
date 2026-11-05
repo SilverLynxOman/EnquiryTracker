@@ -151,11 +151,7 @@ export function QuoteTimeline({
 
   const menu = (e: WindowEnquiry): MenuItem[] => [
     ...(canEdit ? [{ label: "Mark lost…", icon: "close" as const, onSelect: () => onMarkLost(e) }] : []),
-    {
-      label: canEdit ? "Edit enquiry" : "Open full record",
-      icon: canEdit ? ("edit" as const) : ("external" as const),
-      onSelect: () => navigate(`/enquiries/${e.id}`),
-    },
+    { label: "Open enquiry", icon: "external" as const, onSelect: () => navigate(`/enquiries/${e.id}`) },
   ];
   const more = (e: WindowEnquiry) => (
     <Menu

@@ -391,6 +391,28 @@ export interface CustomerSuggestion {
   score: number;
 }
 
+// --- The enquiry page -------------------------------------------------------------------------------------
+
+/** Register columns the enquiry page reads for the customer's record and the lane's history. */
+export type HistoryRow = Pick<
+  EnquiryRow,
+  | "id"
+  | "reference"
+  | "enquiry_date"
+  | "quoted_date"
+  | "confirmed_date"
+  | "status"
+  | "shipment_mode"
+  | "qty_text"
+  | "pol"
+  | "pod"
+  | "customer_name"
+  | "agent_name"
+  | "buy_total"
+  | "sell_total"
+  | "profit"
+>;
+
 // --- The Window and the team voyage (tables: supabase/migrations/20261104223949_game_plan.sql) ----------
 
 /** Register columns The Window (a sales person's home page) reads for one sales person. */

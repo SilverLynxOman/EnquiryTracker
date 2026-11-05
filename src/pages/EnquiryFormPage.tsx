@@ -1,26 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type InputHTMLAttributes } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { EmailView } from "../components/EmailView";
-import { Alert, Button, Card, Field, Spinner, StatusBadge, inputClass } from "../components/ui";
+import { Alert, Button, Card, Field, Spinner, StatusBadge, buttonClass, inputClass } from "../components/ui";
 import {
   createEnquiryFromDraft,
   deleteEnquiry,
-  fetchAudit,
   fetchDraft,
   fetchEnquiry,
-  fetchEnquiryEmails,
-  fetchInboxCounts,
   fetchNames,
   fetchPortSummaries,
-  fetchProfileNames,
   fetchSalesPersons,
   saveEnquiry,
 } from "../lib/api";
 import { draftToPayload } from "../lib/emailDrafts";
 import { describeCommission, mentionsCommission, parseCommission } from "../lib/commission";
-import { errorMessage, fmtDate, fmtDateTime, fmtMoney, todayIso } from "../lib/format";
+import { errorMessage, fmtMoney, todayIso } from "../lib/format";
 import { parseQty, round2 } from "../lib/normalize";
 import {
   MODE_LABELS,
@@ -259,7 +255,9 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
     if (!existing.data || loaded) return;
     const e = existing.data;
     const next = toForm(e);
-    if (searchParams.get("confirm") === "1" && !next.confirmed_date) next.confirmed_date = todayIso();
+    // ?confirm=1 confirms today; ?confirm=YYYY-MM-DD on the day the customer said yes (the enquiry page's suggestion).
+    const confirmOn = searchParams.get("confirm");
+    if (confirmOn && !next.confirmed_date) next.confirmed_date = /^\d{4}-\d{2}-\d{2}$/.test(confirmOn) ? confirmOn : todayIso();
     setForm(next);
     setAutoBuy(totalIsAuto(e.buy_rate, e.units, e.buy_total));
     setAutoSell(totalIsAuto(e.sell_rate, e.units, e.sell_total));
@@ -321,13 +319,11 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
       queryClient.invalidateQueries({ queryKey: ["names"] });
       queryClient.invalidateQueries({ queryKey: ["sales-persons"] });
       queryClient.invalidateQueries({ queryKey: ["audit", row.id] });
-      if (!id) {
-        navigate(`/enquiries/${row.id}`, { replace: true, state: { saved: row.reference } });
-      } else {
-        queryClient.invalidateQueries({ queryKey: ["enquiry", id] });
-        setForm((prev) => ({ ...prev, subject: row.subject ?? prev.subject }));
-        setMessage(`Saved ${row.reference}.`);
-      }
+      queryClient.invalidateQueries({ queryKey: ["customer-history"] });
+      queryClient.invalidateQueries({ queryKey: ["lane-history"] });
+      queryClient.invalidateQueries({ queryKey: ["enquiry", row.id] });
+      // Back to the enquiry's page, which says it was saved.
+      navigate(`/enquiries/${row.id}`, { replace: true, state: { saved: row.reference } });
     },
   });
 
@@ -397,13 +393,13 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/enquiries" className="text-sm text-ink-muted hover:text-ink">
-          ← Register
+        <Link to={id ? `/enquiries/${id}` : "/enquiries"} className="text-sm text-ink-muted hover:text-ink">
+          {id ? "← Back to the enquiry" : "← Register"}
         </Link>
         <h1 className="text-lg font-semibold">
           {id ? (
             <>
-              <span className="tabular-nums">{existing.data?.reference}</span> {existing.data && <StatusBadge status={existing.data.status} />}
+              Edit <span className="tabular-nums">{existing.data?.reference}</span> {existing.data && <StatusBadge status={existing.data.status} />}
             </>
           ) : draftId ? (
             "New enquiry from e-mail"
@@ -420,6 +416,11 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
             >
               Delete
             </Button>
+          )}
+          {id && (
+            <Link to={`/enquiries/${id}`} className={buttonClass("secondary")}>
+              Cancel
+            </Link>
           )}
           {canEdit && (
             <Button type="submit" disabled={save.isPending}>
@@ -604,8 +605,6 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
           </div>
         </Card>
       )}
-      {id && <EnquiryEmails enquiryId={id} />}
-      {id && existing.data && <AuditHistory enquiry={existing.data} />}
     </form>
   );
 }
@@ -625,119 +624,4 @@ function CommissionHint({ remarks, units }: { remarks: string; units: string }) 
     return <span className="text-await">Commission mentioned, but no amount found. Write it like COMMISSION OMR 40/CNTR.</span>;
   }
   return "Commission is read from here, e.g. COMMISSION OMR 40/CNTR.";
-}
-
-const FIELD_LABELS: Record<string, string> = {
-  enquiry_date: "Enquiry date",
-  quoted_date: "Quoted date",
-  confirmed_date: "Confirmation date",
-  closure: "Closed as",
-  closure_reason: "Reason",
-  customer_id: "Customer",
-  // Written by merge_customers / merge_agents: names instead of ids, since the old one no longer exists.
-  customer: "Customer",
-  agent: "Agent",
-  subject: "Subject",
-  trade_type: "Mode",
-  qty_text: "Qty",
-  shipment_mode: "Shipment",
-  units: "Units",
-  container_type: "Container",
-  currency: "Currency",
-  buy_rate: "Buy rate",
-  buy_total: "Buy total",
-  sell_rate: "Sell rate",
-  sell_total: "Sell total",
-  pol: "POL",
-  pod: "POD",
-  agent_id: "Agent",
-  sales_person_id: "Sales person",
-  remarks: "Remarks",
-  reference: "Reference",
-  contact_id: "Contact",
-  requirements: "Requirements",
-};
-
-function showValue(field: string, v: unknown): ReactNode {
-  if (v == null || v === "") return <span className="text-ink-muted">—</span>;
-  if (field.endsWith("_id")) return <span className="text-ink-muted">(changed)</span>;
-  if (field.endsWith("_date")) return fmtDate(String(v));
-  return String(v);
-}
-
-function AuditHistory({ enquiry }: { enquiry: EnquiryRow }) {
-  const audit = useQuery({ queryKey: ["audit", enquiry.id], queryFn: () => fetchAudit(enquiry.id) });
-  const people = useQuery({ queryKey: ["profile-names"], queryFn: fetchProfileNames, staleTime: 300_000 });
-  const who = (uid: string | null) => (uid ? (people.data?.get(uid) ?? "Unknown user") : "System");
-
-  return (
-    <Card title="History">
-      {audit.isLoading ? (
-        <Spinner />
-      ) : audit.error ? (
-        <Alert>{errorMessage(audit.error)}</Alert>
-      ) : (
-        <ol className="space-y-3 text-sm">
-          {audit.data?.map((a) => (
-            <li key={a.id} className="border-l-2 border-line pl-3">
-              <div className="text-meta text-ink-muted">
-                {fmtDateTime(a.changed_at)} · {who(a.changed_by)}
-                {a.import_batch_id && <span className="ml-1 rounded bg-table-head px-1">Excel import</span>}
-              </div>
-              {a.action === "insert" && <div>Created</div>}
-              {a.action === "delete" && <div>Deleted</div>}
-              {a.action === "update" && a.changes && (
-                <ul className="mt-0.5 space-y-0.5">
-                  {Object.entries(a.changes as Record<string, { old: unknown; new: unknown; merged?: boolean }>)
-                    // Commission columns are read from the remarks, whose change is listed already.
-                    .filter(([field]) => !field.startsWith("commission_"))
-                    .map(([field, c]) => (
-                    <li key={field}>
-                      <span className="text-ink-muted">{FIELD_LABELS[field] ?? field}:</span> {showValue(field, c.old)} → {showValue(field, c.new)}
-                      {c.merged && <span className="text-ink-muted"> (customers merged)</span>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-          <li className="pl-3 text-meta text-ink-muted">
-            Record created {fmtDateTime(enquiry.created_at)} ({enquiry.source === "import" ? "from Excel" : enquiry.source === "email" ? "from an e-mail" : "in the app"})
-          </li>
-        </ol>
-      )}
-    </Card>
-  );
-}
-
-const EMAILS_SHOWN = 5;
-
-/** The enquiry's e-mail history, newest first. */
-function EnquiryEmails({ enquiryId }: { enquiryId: string }) {
-  const emails = useQuery({ queryKey: ["enquiry-emails", enquiryId], queryFn: () => fetchEnquiryEmails(enquiryId) });
-  const counts = useQuery({ queryKey: ["inbox", "counts"], queryFn: fetchInboxCounts, staleTime: 60_000 });
-  const [all, setAll] = useState(false);
-  if (emails.isLoading) return <Spinner label="Loading e-mails…" />;
-  if (emails.error) return <Alert>{errorMessage(emails.error)}</Alert>;
-  const list = [...(emails.data ?? [])].reverse();
-  if (!list.length) return null;
-  const shown = all ? list : list.slice(0, EMAILS_SHOWN);
-  return (
-    <Card
-      title={`E-mails (${list.length})`}
-      actions={
-        list.length > EMAILS_SHOWN && (
-          <Button variant="ghost" size="sm" onClick={() => setAll(!all)}>
-            {all ? "Show latest only" : `Show all ${list.length}`}
-          </Button>
-        )
-      }
-    >
-      <div className="space-y-2">
-        {shown.map((m) => (
-          <EmailView key={m.id} email={m} mailbox={counts.data?.mailboxes[0]?.email} />
-        ))}
-      </div>
-    </Card>
-  );
 }

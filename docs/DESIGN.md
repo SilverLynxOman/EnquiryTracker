@@ -130,15 +130,24 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 ### Actions
 - **One next step per row:** Mark quoted (awaiting quote), Confirm job (quoted), or View details. Read-only users always get View details.
 - **Button styles:** routine row actions use the outline (`secondary`) button. Filled violet is for the selected row's action and the page's primary action.
-- **Overflow menu:** secondary actions go in the ⋯ menu: View details, Edit enquiry, Confirm job… (when not yet quoted), and Copy reference.
+- **Overflow menu:** secondary actions go in the ⋯ menu: View details, Open enquiry, Edit enquiry (editors), Confirm job… (when not yet quoted), and Copy reference.
 - **While saving:** the button shows a spinner and "Saving…", and other rows' Mark quoted buttons are disabled until it finishes.
-- **Keep existing behaviour:** Confirm job opens the enquiry form with today's confirmation date filled in, as before. Validation, permissions (viewer, editor, admin) and confirmation prompts stay as they are.
+- **Keep existing behaviour:** Confirm job opens the enquiry form (`/enquiries/<id>/edit?confirm=1`) with today's confirmation date filled in, as before. Validation, permissions (viewer, editor, admin) and confirmation prompts stay as they are.
 
 ### Details drawer
 - **Opening:** a row, its reference or View details opens a 380 px drawer. The open drawer is in the URL (`sel=`), so it survives a reload and can be shared.
 - **Wide screens (1280 px and up):** it sits beside the table, and closing it gives the table its full width back. Below that it floats over the page from the right.
-- **Contents:** reference and status, customer, subject, progress (enquiry, quote, confirmation or closure), job details, rates and remarks. The footer holds the next step and Edit enquiry / Open full record.
+- **Contents:** reference and status, customer, subject, progress (enquiry, quote, confirmation or closure), job details, rates and remarks. The footer holds the next step and Open enquiry.
 - **Keyboard:** focus moves to the drawer title on open. Escape or the ✕ closes it, and focus returns to the row's reference.
+
+### Enquiry page
+- **Addresses:** `/enquiries/<id>` shows the enquiry and `/enquiries/<id>/edit` is the form. Confirm job opens the form with `?confirm=1` (today) or `?confirm=<date>` (the day the customer said yes). Saving returns to the enquiry page, which says it was saved.
+- **Top:** reference, customer, status, mode and quantity, direction, route and sales person; Edit, and a ⋯ menu with Mark lost…, Reopen, Copy reference and, for admins, Delete.
+- **Progress line:** received (and where from), quoted (how fast, against the end of the next working day; due or overdue while waiting), the wait and its follow-ups, then won or lost. One current step, in violet.
+- **Next step card:** first in the main column. Its tone follows the stage: violet to quote, amber when the quote is due today or has waited 14 days or more, red when overdue or lost, green for a yes or a confirmed job. It holds the stage's one filled button: Mark quoted, Log a follow-up (users linked to a sales person, logged as them), Confirm job, Add the rates or Reopen.
+- **Read from the e-mails:** a quote e-mailed to the customer (a price in OMR with the words of an offer) while the register still says awaiting quote suggests Mark quoted on that day; the customer's go-ahead after the quote suggests Confirm job, and says when they also ask for a better rate. Both show the e-mail they came from, and nothing changes without a click. The rules and their tests are in `src/lib/enquiryDetails.ts`.
+- **E-mails:** newest first, by day. Each row says who wrote (Customer, External, Ours: the customer is recognised by the enquiry's contact or by their company's name or initials in the mail domain) and what it looks like (Quote sent, Says yes, Rate, Rate request). A click opens the whole message. Filters by who wrote.
+- **Side column:** the customer's record this year (enquiries, won, sold and profit in USD, the usual days from quote to confirmation, other open quotes, look-alike names to merge), the route's history (the same POL and POD in the same mode this year, the latest wins with buy → sell), and the change history with follow-ups.
 
 ### Menus
 - **Placement:** they open in a portal, so a scrolling table cannot clip them. They sit right-aligned under the trigger and flip upwards near the bottom of the screen.

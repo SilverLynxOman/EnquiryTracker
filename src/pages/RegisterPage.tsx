@@ -129,7 +129,7 @@ export default function RegisterPage() {
     onError: (e, row) => setActionError(`${row.reference} could not be marked as quoted. ${errorMessage(e)}`),
   });
 
-  const confirm = (row: EnquiryRow) => navigate(`/enquiries/${row.id}?confirm=1`);
+  const confirm = (row: EnquiryRow) => navigate(`/enquiries/${row.id}/edit?confirm=1`);
 
   async function copyReference(row: EnquiryRow) {
     try {
@@ -143,7 +143,8 @@ export default function RegisterPage() {
   const menuItems = (row: EnquiryRow): MenuItem[] => {
     const items: MenuItem[] = [];
     if (row.id !== view.selected) items.push({ label: "View details", icon: "chevronRight", onSelect: () => select(row) });
-    items.push({ label: canEdit ? "Edit enquiry" : "Open full record", icon: canEdit ? "edit" : "external", onSelect: () => navigate(`/enquiries/${row.id}`) });
+    items.push({ label: "Open enquiry", icon: "external", onSelect: () => navigate(`/enquiries/${row.id}`) });
+    if (canEdit) items.push({ label: "Edit enquiry", icon: "edit", onSelect: () => navigate(`/enquiries/${row.id}/edit`) });
     if (canEdit && row.status === "new") items.push({ label: "Confirm job…", icon: "check", onSelect: () => confirm(row) });
     items.push({ label: "Copy reference", icon: "copy", onSelect: () => void copyReference(row) });
     return items;

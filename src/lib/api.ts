@@ -1,3 +1,4 @@
+import { addDays } from "./format";
 import { supabase } from "./supabase";
 import type {
   AuditEntry,
@@ -15,6 +16,7 @@ import type {
   EnquiryPayload,
   EnquiryRow,
   FollowUpRecord,
+  HistoryRow,
   HomePrefs,
   ImportBatch,
   ImportPayload,
@@ -374,6 +376,41 @@ export async function fetchAudit(enquiryId: string): Promise<AuditEntry[]> {
   );
 }
 
+const HISTORY_COLUMNS =
+  "id, reference, enquiry_date, quoted_date, confirmed_date, status, shipment_mode, qty_text, pol, pod, customer_name, agent_name, " +
+  "buy_total, sell_total, profit";
+
+/** A customer's enquiries raised since a date: the customer's record on the enquiry page. */
+export function fetchCustomerHistory(customerId: string, from: string): Promise<HistoryRow[]> {
+  return fetchAllPages<HistoryRow>((a, b) =>
+    supabase
+      .from("enquiry_register")
+      .select(HISTORY_COLUMNS)
+      .eq("customer_id", customerId)
+      .gte("enquiry_date", from)
+      .order("enquiry_date", { ascending: false })
+      .order("id")
+      .range(a, b),
+  );
+}
+
+/** Enquiries raised since a date with the same POL and POD in any letter case, as the reports' lanes: the lane's history. */
+export function fetchLaneHistory(pol: string, pod: string, from: string): Promise<HistoryRow[]> {
+  // ilike without wildcards compares ignoring case; a port name's own % or _ must not act as one.
+  const exactly = (v: string) => v.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+  return fetchAllPages<HistoryRow>((a, b) =>
+    supabase
+      .from("enquiry_register")
+      .select(HISTORY_COLUMNS)
+      .ilike("pol", exactly(pol))
+      .ilike("pod", exactly(pod))
+      .gte("enquiry_date", from)
+      .order("enquiry_date", { ascending: false })
+      .order("id")
+      .range(a, b),
+  );
+}
+
 // --- Import ----------------------------------------------------------------
 
 /** Stored enquiries for the given references, with the fields protected from imports (edited in the app). */
@@ -588,6 +625,56 @@ export async function fetchEmails(status: EmailStatus, limit = 100): Promise<Ema
       .order("received_at", { ascending: false })
       .limit(limit),
   );
+}
+
+export interface EmailSearch {
+  status: EmailStatus;
+  /** Free text: subject, sender, preview text, or an SL reference. */
+  q?: string;
+  sender?: "external" | "staff" | "";
+  /** Oman calendar dates (YYYY-MM-DD), both inclusive. */
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}
+
+/** One page of e-mails with a given status, newest first, plus how many match in total (the whole history, no cap). */
+export async function searchEmails(s: EmailSearch): Promise<{ rows: EmailListItem[]; total: number; outOfRange?: boolean }> {
+  let query = supabase
+    .from("email_messages")
+    .select(
+      `${EMAIL_COLUMNS}, enquiry:enquiries!email_messages_enquiry_id_fkey(id, reference), ` +
+        "suggested:enquiries!email_messages_suggested_enquiry_id_fkey(id, reference)",
+      { count: "exact" },
+    )
+    .eq("status", s.status);
+
+  if (s.sender) query = query.eq("sender_type", s.sender);
+  if (s.from) query = query.gte("received_at", `${s.from}T00:00:00+04:00`);
+  if (s.to) query = query.lt("received_at", `${addDays(s.to, 1)}T00:00:00+04:00`);
+
+  // PostgREST's or() syntax reserves , ( ) and the wildcard characters.
+  const term = (s.q ?? "").replace(/[,()*%\\:"]/g, " ").trim();
+  if (term) {
+    const like = `*${term}*`;
+    const parts = [`subject.ilike.${like}`, `from_email.ilike.${like}`, `from_name.ilike.${like}`, `snippet.ilike.${like}`];
+    if (/^SL\s*\d{4,}$/i.test(term)) {
+      const ref = term.replace(/\s+/g, "").toUpperCase();
+      parts.push(`sl_refs.cs.{${ref}}`);
+      // Replies filed by conversation need not quote the reference, so also match the enquiry it was filed to.
+      const hit = unwrap<{ id: string }[]>(await supabase.from("enquiries").select("id").eq("reference", ref).limit(1));
+      if (hit[0]) parts.push(`enquiry_id.eq.${hit[0].id}`);
+    }
+    query = query.or(parts.join(","));
+  }
+
+  const start = s.page * s.pageSize;
+  const { data, error, count } = await query.order("received_at", { ascending: false }).range(start, start + s.pageSize - 1);
+  // A page past the end (an old link, or mail moved away meanwhile): go back to the first page.
+  if (error?.code === "PGRST103" && s.page > 0) return searchEmails({ ...s, page: 0 }).then((r) => ({ ...r, outOfRange: true }));
+  if (error) throw error;
+  return { rows: (data ?? []) as unknown as EmailListItem[], total: count ?? 0 };
 }
 
 export async function fetchEnquiryEmails(enquiryId: string): Promise<EmailMessage[]> {
