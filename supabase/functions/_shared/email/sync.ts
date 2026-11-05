@@ -288,6 +288,173 @@ export async function runReclassify(deps: SyncDeps, limit: number): Promise<Recl
   return stats;
 }
 
+/** One Claude request in a Message Batch; customId is the stored e-mail row's id. */
+export interface BatchItem {
+  customId: string;
+  input: ClassifierInput;
+}
+
+/** Claude's Message Batches (half price, results usually within an hour). */
+export interface BatchClassifier {
+  /** Submits the requests; returns the batch id. */
+  submit(items: BatchItem[]): Promise<string>;
+  /** True once every request in the batch has a result. */
+  isEnded(batchId: string): Promise<boolean>;
+  /** Claude's raw JSON answer per customId, or why that request failed. */
+  results(batchId: string): Promise<Map<string, { answer: unknown } | { error: string }>>;
+}
+
+export interface PendingBatch {
+  id: string;
+  batch_id: string;
+  items: UnclassifiedEmail[];
+}
+
+/** Where submitted batches are remembered between calls (public.email_ai_batches). */
+export interface BatchDb {
+  pendingBatch(): Promise<PendingBatch | null>;
+  saveBatch(batchId: string, items: UnclassifiedEmail[]): Promise<void>;
+  finishBatch(id: string, stats: BatchReclassifyStats): Promise<void>;
+  /** Of these rows, the ones still unclassified and untouched (the rest were handled meanwhile). */
+  stillUnclassified(ids: string[]): Promise<Set<string>>;
+}
+
+export interface BatchReclassifyStats extends ReclassifyStats {
+  /** submitted: a batch was sent; waiting: it is still running; collecting: results filed in part
+   *  (call again); collected: done; nothing_to_do: no unclassified e-mails. */
+  state: "submitted" | "waiting" | "collecting" | "collected" | "nothing_to_do";
+  batch_id: string | null;
+  /** Requests sent in the batch submitted by this call. */
+  submitted: number;
+}
+
+/**
+ * Re-classifies stored "Not classified" e-mails through a Message Batch, in two calls: when no batch is
+ * pending it prepares up to `limit` e-mails (those the rules can file without Claude are filed at once)
+ * and submits one batch; on later calls it checks that batch and, once it has ended, files each answer
+ * through the same decision code and db.reingest as the live run. A failed or refused request leaves
+ * its row as it is. Collecting is resumable: rows already replaced are skipped on the next call.
+ */
+export async function runReclassifyBatch(
+  deps: SyncDeps,
+  batch: { client: BatchClassifier; db: BatchDb },
+  limit: number,
+): Promise<BatchReclassifyStats> {
+  const { options: o, db } = deps;
+  const now = deps.now ?? (() => new Date());
+  const log = deps.log ?? (() => {});
+  const stats: BatchReclassifyStats = {
+    state: "nothing_to_do",
+    batch_id: null,
+    submitted: 0,
+    candidates: 0,
+    processed: 0,
+    linked: 0,
+    draft: 0,
+    awaiting_enquiry: 0,
+    review: 0,
+    ignored: 0,
+    skipped: 0,
+    ai_calls: 0,
+    deferred: 0,
+    errors: 0,
+    error_messages: [],
+  };
+  const deadline = now().getTime() + o.timeBudgetMs;
+  const { load, aiInput, finish } = messageSteps(deps, log);
+  const fail = (row: UnclassifiedEmail, e: unknown) => {
+    stats.errors++;
+    if (stats.error_messages.length < 5) stats.error_messages.push(`${row.gmail_message_id}: ${message(e)}`);
+    log(`batch re-classification of ${row.gmail_message_id} failed: ${message(e)}`);
+  };
+  const byThread = (rows: UnclassifiedEmail[]) => {
+    const threads = new Map<string, UnclassifiedEmail[]>();
+    for (const r of rows) threads.set(r.gmail_thread_id, [...(threads.get(r.gmail_thread_id) ?? []), r]);
+    return [...threads.values()];
+  };
+  const count = (status: string | null) => {
+    if (status === "skipped") stats.skipped++;
+    else if (status) countStatus(stats, status);
+  };
+
+  const pending = await batch.db.pendingBatch();
+  if (pending) {
+    stats.batch_id = pending.batch_id;
+    if (!(await batch.client.isEnded(pending.batch_id))) return { ...stats, state: "waiting" };
+
+    const results = await batch.client.results(pending.batch_id);
+    const open = await batch.db.stillUnclassified(pending.items.map((r) => r.id));
+    const rows = pending.items.filter((r) => open.has(r.id));
+    stats.candidates = rows.length;
+    stats.skipped = pending.items.length - rows.length;
+
+    await pool(byThread(rows), o.concurrency, async (items) => {
+      for (const r of items) {
+        if (now().getTime() > deadline) {
+          stats.deferred++;
+          continue;
+        }
+        try {
+          const result = results.get(r.id);
+          if (!result) throw new Error("no result in the batch");
+          if ("error" in result) throw new Error(`still not classified: ${result.error}`.slice(0, 500));
+          const m = await load(r.gmail_message_id, r.id);
+          if (!m) continue;
+          const outcome =
+            m.plan.kind === "final"
+              ? m.plan.outcome
+              : decideWithAi(m.email, m.ctx, normaliseAiResult(result.answer, m.ctx), m.plan.recheck);
+          count(await finish(m, outcome, r.id));
+        } catch (e) {
+          fail(r, e);
+        }
+      }
+    });
+
+    if (stats.deferred > 0) return { ...stats, state: "collecting" };
+    const done: BatchReclassifyStats = { ...stats, state: "collected" };
+    await batch.db.finishBatch(pending.id, done);
+    return done;
+  }
+
+  const rows = await db.unclassified(Math.max(1, Math.floor(limit) || 1));
+  stats.candidates = rows.length;
+  if (rows.length === 0) return stats;
+
+  const items: BatchItem[] = [];
+  const batched: UnclassifiedEmail[] = [];
+  await pool(byThread(rows), o.concurrency, async (thread) => {
+    for (const r of thread) {
+      if (now().getTime() > deadline) {
+        stats.deferred++;
+        continue;
+      }
+      try {
+        const m = await load(r.gmail_message_id, r.id);
+        if (!m) continue;
+        if (m.plan.kind === "final") {
+          count(await finish(m, m.plan.outcome, r.id)); // the rules decide it: no Claude needed
+        } else {
+          items.push({ customId: r.id, input: await aiInput(m) });
+          batched.push(r);
+        }
+      } catch (e) {
+        fail(r, e);
+      }
+    }
+  });
+
+  if (items.length > 0) {
+    const batchId = await batch.client.submit(items);
+    await batch.db.saveBatch(batchId, batched);
+    stats.batch_id = batchId;
+    stats.submitted = items.length;
+    stats.ai_calls = items.length;
+  }
+  // Everything the rules could decide is filed already; with nothing for Claude there is no batch.
+  return { ...stats, state: items.length > 0 ? "submitted" : "collected" };
+}
+
 /**
  * Fetches, classifies and stores one Gmail message; returns the stored status, or null when there was
  * nothing to store. With `replace` (the id of the stored row) the message is re-classified instead: the
@@ -295,9 +462,55 @@ export async function runReclassify(deps: SyncDeps, limit: number): Promise<Recl
  * the row is replaced through db.reingest, which returns "skipped" when staff handled it meanwhile.
  */
 function messageProcessor(deps: SyncDeps, counters: { ai_calls: number }, log: (m: string) => void) {
-  const { options: o, gmail, db, storage, classify } = deps;
+  const { classify } = deps;
+  const { load, aiInput, finish } = messageSteps(deps, log);
 
   return async function processMessage(id: string, replace?: string): Promise<string | null> {
+    const m = await load(id, replace);
+    if (!m) return null;
+    const { email, ctx, plan } = m;
+    let outcome: Outcome;
+    if (plan.kind === "final") {
+      outcome = plan.outcome;
+    } else if (!classify) {
+      if (replace) throw new Error("Claude is not configured (ANTHROPIC_API_KEY)");
+      outcome = decideWithoutAi(plan.recheck, "Not classified: Claude is not configured (ANTHROPIC_API_KEY)");
+    } else {
+      try {
+        const input = await aiInput(m);
+        counters.ai_calls++;
+        const answer = await classify(input);
+        outcome = decideWithAi(email, ctx, normaliseAiResult(answer, ctx), plan.recheck);
+      } catch (e) {
+        if (replace) throw new Error(`still not classified: ${message(e)}`.slice(0, 500));
+        log(`classification of ${id} failed: ${message(e)}`);
+        outcome = decideWithoutAi(plan.recheck, `Not classified: ${message(e)}`.slice(0, 500));
+      }
+    }
+    return finish(m, outcome, replace);
+  };
+}
+
+type Plan = ReturnType<typeof planWithoutAi>;
+
+/** A message fetched from Gmail with what the database knows about it, ready to classify and store. */
+interface LoadedMessage {
+  id: string;
+  email: ParsedEmail;
+  ctx: MatchContext;
+  plan: Plan;
+  download: (a: RawAttachment) => Promise<Uint8Array>;
+}
+
+/**
+ * The steps of filing one message, shared by the sync, the live re-classification and the batch one:
+ * load (Gmail + match context + rule-based plan), aiInput (what Claude reads) and finish (store, or replace
+ * the stored row with `replace`).
+ */
+function messageSteps(deps: SyncDeps, log: (m: string) => void) {
+  const { options: o, gmail, db, storage } = deps;
+
+  async function load(id: string, replace?: string): Promise<LoadedMessage | null> {
     const raw = await gmail.getMessage(id);
     if (raw.labelIds?.includes("DRAFT")) return null;
     const email = parseGmailMessage(raw, { mailbox: o.mailbox, internalDomains: o.internalDomains });
@@ -324,33 +537,24 @@ function messageProcessor(deps: SyncDeps, counters: { ai_calls: number }, log: (
       return bytes;
     };
 
-    const plan = planWithoutAi(email, ctx);
-    let outcome: Outcome;
-    if (plan.kind === "final") {
-      outcome = plan.outcome;
-    } else if (!classify) {
-      if (replace) throw new Error("Claude is not configured (ANTHROPIC_API_KEY)");
-      outcome = decideWithoutAi(plan.recheck, "Not classified: Claude is not configured (ANTHROPIC_API_KEY)");
-    } else {
+    return { id, email, ctx, plan: planWithoutAi(email, ctx), download };
+  }
+
+  /** What Claude reads for this message: the e-mail, the match context and the readable attachments. */
+  async function aiInput(m: LoadedMessage): Promise<ClassifierInput> {
+    const files: AiAttachment[] = [];
+    for (const a of attachmentsForAi(m.email.attachments)) {
       try {
-        const files: AiAttachment[] = [];
-        for (const a of attachmentsForAi(email.attachments)) {
-          try {
-            files.push({ meta: a, base64: bytesToBase64(await download(a)) });
-          } catch (e) {
-            log(`attachment ${a.filename} of ${id} not read: ${message(e)}`);
-          }
-        }
-        counters.ai_calls++;
-        const answer = await classify({ email, ctx, attachments: files });
-        outcome = decideWithAi(email, ctx, normaliseAiResult(answer, ctx), plan.recheck);
+        files.push({ meta: a, base64: bytesToBase64(await m.download(a)) });
       } catch (e) {
-        if (replace) throw new Error(`still not classified: ${message(e)}`.slice(0, 500));
-        log(`classification of ${id} failed: ${message(e)}`);
-        outcome = decideWithoutAi(plan.recheck, `Not classified: ${message(e)}`.slice(0, 500));
+        log(`attachment ${a.filename} of ${m.id} not read: ${message(e)}`);
       }
     }
+    return { email: m.email, ctx: m.ctx, attachments: files };
+  }
 
+  async function finish(m: LoadedMessage, outcome: Outcome, replace?: string): Promise<string | null> {
+    const { id, email, download } = m;
     const attachments = await keepAttachments(email, outcome.decision.status, download);
     const row: Record<string, unknown> = {
       gmail_message_id: email.gmail_message_id,
@@ -395,7 +599,9 @@ function messageProcessor(deps: SyncDeps, counters: { ai_calls: number }, log: (
       };
       return (await db.ingest({ ...payload, decision: fallback, new_draft: null })).status;
     }
-  };
+  }
+
+  return { load, aiInput, finish };
 
   async function keepAttachments(
     email: ParsedEmail,
