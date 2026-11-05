@@ -4,6 +4,7 @@ import { Icon } from "../../components/icons";
 import { Menu, type MenuItem } from "../../components/Menu";
 import { Alert, Button, buttonClass, IconButton, Spinner, StatusBadge } from "../../components/ui";
 import { displayName, fmtDateLong, nextStep, shipmentLabel, statusDetail, TRADE_LABELS } from "../../lib/display";
+import { describeCommission } from "../../lib/commission";
 import { fmtMoney, fmtPercent } from "../../lib/format";
 import { MODE_LABELS, type EnquiryRow } from "../../lib/types";
 
@@ -173,6 +174,21 @@ export function EnquiryDrawer({
                   ],
                 ]}
               />
+              )}
+              {row.commission_amount != null && (
+                <Rows
+                  items={[
+                    [
+                      "Commission",
+                      <span className="tabular-nums">
+                        {describeCommission(
+                          { amount: row.commission_amount, currency: row.commission_currency ?? null, perUnit: !!row.commission_per_unit },
+                          row.units,
+                        )}
+                      </span>,
+                    ],
+                  ]}
+                />
               )}
             </Section>
             {row.remarks && (

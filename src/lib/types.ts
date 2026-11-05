@@ -118,6 +118,12 @@ export interface Enquiry {
   sell_rate: number | null;
   sell_total: number | null;
   profit: number | null;
+  /** Read from the remarks by the database on every save (see src/lib/commission.ts); not entered directly. */
+  commission_amount?: number | null;
+  commission_currency?: string | null;
+  commission_per_unit?: boolean | null;
+  /** For the shipment: per-container amounts times units. */
+  commission_total?: number | null;
   pol: string | null;
   pod: string | null;
   agent_id: string | null;
