@@ -73,6 +73,8 @@ One-time setup. In GitHub, go to *Settings → Secrets and variables → Actions
 | `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens → *Generate new token* |
 | `SUPABASE_DB_PASSWORD` | The database password chosen when the project was created. You can reset it under *Project Settings → Database*. |
 
+**Edge Functions are deployed automatically too.** `.github/workflows/functions.yml` deploys, after each merge to `main`, the functions changed since its last successful deploy: a file in the function's folder, shared code it imports (`supabase/functions/_shared`), or its section of `supabase/config.toml` (`scripts/edge_functions.py` decides). It takes `verify_jwt` from `supabase/config.toml` and passes it to the CLI explicitly, then checks that each function answers a request itself. Pull requests list what merging would deploy. To deploy by hand: Actions → *Edge Functions* → *Run workflow* (one function, or `all`). It uses the same `SUPABASE_ACCESS_TOKEN` secret.
+
 To add a schema change, create a timestamped file and write the SQL in it:
 
 ```bash
@@ -109,7 +111,7 @@ In the Supabase dashboard:
    ```
 
    Roles: `owner` (everything, and manages logins in Settings), `admin` (everything else, including merging and deleting), `editor` (add / edit / import), `viewer` (read-only, the default).
-4. Deploy the `user-admin` Edge Function (`npx supabase functions deploy user-admin --no-verify-jwt`); it checks itself that the caller is the owner.
+4. The `user-admin` Edge Function (Settings' invitations, resets and access) is deployed by the *Edge Functions* workflow; it checks itself that the caller is the owner.
 5. Everyone else is set up in the app: the owner opens the avatar menu → **Settings** → **Invite someone**, with their role and sales person. The invitation link is shown to send by WhatsApp or e-mail; *E-mail it from Supabase* needs your own SMTP (Authentication → Emails), because Supabase's built-in mailer sends only a few e-mails an hour and only to the project team. Link each sales person's login to their name in the register: their open quotes (The Window) become their home page and they see only their own enquiries. Users without a link (managers, pricing) keep the dashboard and see everything.
 
 ### 3. Run locally
