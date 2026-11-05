@@ -91,7 +91,7 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 
 ### Navigation
 - **Left:** logo and application name, then Dashboard, Register, Follow-ups, Reports, Inbox and Masters, each with an icon. The active item has 600 weight, violet text and a 2 px violet underline.
-- **Right:** Import (editors only), Export (on the Register page; it exports the filtered view), New enquiry (the one filled primary button), then the avatar menu (account, *Users and roles* for admins, sign out).
+- **Right:** Import (editors only), Export (on the Register page; it exports the filtered view), New enquiry (the one filled primary button), then the avatar menu (account, *Settings* for the owner, sign out). Sales staff (logins linked to a sales person as editor or viewer) see only their own enquiries, so Inbox and Import are hidden for them.
 - **Narrow screens:** labels collapse to icons, and their accessible names stay. Navigation labels show from 1024 px, Import and Export labels from 1280 px. Below 640 px the bar has a 16 px gutter, and on the narrowest phones the navigation icons scroll inside the bar instead of widening the page.
 
 ### Page structure (list pages)
@@ -166,12 +166,15 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 - **Bulk:** the header tick box selects the page; *Select all N* selects the whole tab. *Mark lost…* opens a dialog with one reason (suggestions, free text). After saving, a success alert offers *Undo*; it stays until dismissed.
 - **Sales users** see their own enquiries first (`sp` in the URL overrides it).
 
-### Users page
-- **Where:** `/admin/users`, from the avatar menu (*Users and roles*), for admins only. Anyone else who opens the address gets a short message, and the server refuses them the list (`admin_list_users()`) and every change (Row Level Security).
-- **Header:** no navigation item names this page, so a 48 px strip in place of the tabs does: the page name and the number of logins.
-- **Table:** user (name, *You* on your own row, e-mail; the last sign-in shows under it below 800 px of table width), role, sales person, last signed in ("Today, 09:12", or "Not signed in yet" with the invitation date). The footer explains the roles, what linking does and how to add someone (an invitation from the Supabase dashboard).
-- **Saving:** choosing a role or sales person saves it at once; the select shows a spinner meanwhile and a toast confirms ("Vivek is now an editor."). There is no Save button and no undo: choosing the old value puts it back.
-- **Your own role** is text, not a select: another admin changes it, so the last admin cannot lock everyone out by mistake.
+### Settings (users and access)
+- **Where:** `/settings` (the old `/admin/users` leads there), from the avatar menu (*Settings*), for the owner only. Anyone else who opens the address gets a short message, and the server refuses them the list (`admin_list_users()`), every change (Row Level Security) and every Auth action (the `user-admin` Edge Function).
+- **Header:** no navigation item names this page, so a 48 px strip in place of the tabs does: *Settings* and the one primary button, *Invite someone*. The *Users and access* panel heads the table with the counts ("5 logins · 1 invited · 1 turned off").
+- **Table:** user (name, *You*, an amber *Invited* or red *Access off* badge, e-mail; a turned-off name is struck through and the row muted), role, sales person ("Sees only these enquiries" under a linked editor or viewer), activity (last sign-in and changes in the register this week; under the name below 900 px of table width), and a ⋯ row menu. The footer explains the roles, what linking does and what activity counts.
+- **Row menu:** *Change name*; *Invite again* (not accepted yet) or *Reset password*; *Set a temporary password*; *Turn access off* (red, after a separator) or *Turn access back on*. Your own row has only *Change name*. Each opens a dialog that says what will happen; turning access off uses the danger button.
+- **Links:** invitations and resets default to *Show me a link*: the dialog then shows the link with *Copy* and *Send on WhatsApp*, and says it works once and expires after an hour. *E-mail it from Supabase* is the other choice; its hint says it needs SMTP. A temporary password is suggested (three groups of four letters and digits, no look-alikes), shown once to pass on, and the person must choose their own at the next sign-in.
+- **Saving:** choosing a role or sales person saves it at once; the select shows a spinner meanwhile and a toast confirms ("Vivek is now an editor."). There is no Save button and no undo: choosing the old value puts it back. Choosing *Owner* asks first, because owners manage everyone.
+- **Your own role** is text, not a select ("Another owner can change it"), and you cannot turn off your own access: the database also keeps at least one active owner.
+- **Access off:** a turned-off login has no role anywhere at once; the app shows only "Your access is turned off" with *Sign out*.
 - **One login per sales person:** options already linked to someone say so ("Vivek — linked to Ahmed"). Choosing one asks first: *Move to …* (primary; unlinks the other logins) or *Link both*. Rows that still share a sales person carry an amber "Also linked to …" line with a warning icon. Inactive sales persons cannot be chosen, but an existing link to one stays visible, marked "(inactive)".
 
 ### Feedback states
