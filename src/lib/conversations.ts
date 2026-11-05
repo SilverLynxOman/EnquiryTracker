@@ -50,18 +50,15 @@ export function modeGroup(mode: ShipmentMode | null | undefined): ModeFilter {
 }
 
 /**
- * The seven days the week strip shows for a selected day: the last week up to today while the
- * selection is within it, otherwise the selected day's week (Saturday to Friday, the Omani week), never past today.
+ * The cells of a month calendar for "YYYY-MM", weeks starting on Saturday (the Omani week):
+ * null for the blanks before the 1st, then each day as YYYY-MM-DD.
  */
-export function weekDays(selected: string, today: string): string[] {
-  let end: string;
-  if (selected > addDays(today, -7)) end = today;
-  else {
-    const weekday = new Date(`${selected}T00:00:00Z`).getUTCDay(); // 0 = Sunday … 6 = Saturday
-    end = addDays(selected, (5 - weekday + 7) % 7); // the Friday that ends its week
-    if (end > today) end = today;
-  }
-  return Array.from({ length: 7 }, (_, i) => addDays(end, i - 6));
+export function monthGrid(month: string): (string | null)[] {
+  const [y, m] = month.split("-").map(Number);
+  const first = new Date(Date.UTC(y!, m! - 1, 1));
+  const blanks = (first.getUTCDay() + 1) % 7; // Saturday 0, Sunday 1 … Friday 6
+  const length = new Date(Date.UTC(y!, m!, 0)).getUTCDate();
+  return [...Array<null>(blanks).fill(null), ...Array.from({ length }, (_, i) => addDays(`${month}-01`, i))];
 }
 
 // --- Row display helpers (Oman time, UTC+4) -------------------------------------

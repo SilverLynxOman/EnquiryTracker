@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupByEnquiry, modeGroup, weekDays } from "./conversations";
+import { groupByEnquiry, modeGroup, monthGrid } from "./conversations";
 import type { EmailListItem } from "./types";
 
 function mail(id: string, ref: string | null, at: string, from: string, files = 0): EmailListItem {
@@ -35,27 +35,19 @@ describe("groupByEnquiry", () => {
   });
 });
 
-describe("weekDays", () => {
-  const today = "2026-11-05"; // a Thursday
-
-  it("shows the last seven days, ending today, while the selection is among them", () => {
-    expect(weekDays(today, today)).toEqual(["2026-10-30", "2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"]);
-    expect(weekDays("2026-10-30", today).at(-1)).toBe(today);
+describe("monthGrid", () => {
+  it("starts weeks on Saturday: 1 Nov 2026 is a Sunday, so one blank", () => {
+    const cells = monthGrid("2026-11");
+    expect(cells[0]).toBeNull();
+    expect(cells[1]).toBe("2026-11-01");
+    expect(cells.at(-1)).toBe("2026-11-30");
+    expect(cells.filter(Boolean)).toHaveLength(30);
   });
 
-  it("shows an older day's Saturday-to-Friday week", () => {
-    const days = weekDays("2026-10-14", today); // a Wednesday
-    expect(days[0]).toBe("2026-10-10"); // Saturday
-    expect(days.at(-1)).toBe("2026-10-16"); // Friday
-    expect(days).toContain("2026-10-14");
-  });
-
-  it("never runs past today and always contains the selected day", () => {
-    for (const d of ["2026-10-29", "2026-10-25", "2026-10-24"]) {
-      const days = weekDays(d, today);
-      expect(days.at(-1)! <= today).toBe(true);
-      expect(days).toContain(d);
-    }
+  it("needs no blank when the month starts on a Saturday, and knows leap years", () => {
+    expect(monthGrid("2026-08")[0]).toBe("2026-08-01"); // a Saturday
+    expect(monthGrid("2028-02").filter(Boolean)).toHaveLength(29);
+    expect(monthGrid("2026-05").filter((c) => c === null)).toHaveLength(6); // 1 May 2026 is a Friday
   });
 });
 
