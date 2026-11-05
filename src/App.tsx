@@ -19,6 +19,8 @@ const ImportPage = lazy(() => import("./pages/ImportPage"));
 const PeriodReportPage = lazy(() => import("./pages/reports/PeriodReportPage"));
 const AnalyticsPage = lazy(() => import("./pages/reports/AnalyticsPage"));
 const TvPage = lazy(() => import("./pages/gameplan/TvPage"));
+// Admins only, and rarely opened.
+const UsersPage = lazy(() => import("./pages/UsersPage"));
 
 export default function App() {
   return (
@@ -68,6 +70,14 @@ export default function App() {
           <Route path="analytics" element={<AnalyticsPage />} />
         </Route>
         <Route path="account" element={<AccountPage />} />
+        <Route
+          path="admin/users"
+          element={
+            <Suspense fallback={<Spinner />}>
+              <UsersPage />
+            </Suspense>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

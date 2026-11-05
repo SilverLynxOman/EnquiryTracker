@@ -32,6 +32,16 @@ export interface Profile {
   sales_person_id: string | null;
 }
 
+/** Row of the `admin_list_users` RPC (admins only): a login with its profile. */
+export interface UserAccount extends Profile {
+  /** From auth.users; null only for a login without an e-mail address. */
+  email: string | null;
+  /** The linked sales person's name, also when that sales person is no longer active. */
+  sales_person_name: string | null;
+  last_sign_in_at: string | null;
+  created_at: string;
+}
+
 export interface NamedRef {
   id: string;
   name: string;

@@ -24,6 +24,7 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 | Reports | Daily, weekly (Sat–Fri) and monthly reports: enquiries raised plus earlier ones confirmed, sales-person and mode totals; Excel export in the old report layouts. Analytics: monthly trend and profit chart; conversion and profit by sales person, customer, agent, lane, mode or trade type |
 | Customers | Every customer with enquiry counts and former names; rename; **possible duplicates** grouped by similar spelling, merged in one step (admins). Old names are remembered, so imports and e-mails still find the customer |
 | Inbox | New enquiries read from the pricing mailbox, ready to create with one click; e-mails to review; every enquiry keeps its e-mail history (see [E-mail intake](#e-mail-intake)) |
+| Users and roles | Admins only, from the avatar menu: every staff login with its e-mail address and last sign-in; change its role or the sales person it is linked to in place. Asks before a second login is linked to the same sales person |
 
 ## Project layout
 
@@ -106,15 +107,8 @@ In the Supabase dashboard:
    where id = (select id from auth.users where email = 'you@silverlynxoman.com');
    ```
 
-   Roles: `admin` (everything, including delete), `editor` (add / edit / import), `viewer` (read-only, the default).
-5. Link each sales person's login to their name in the register, so the game plan becomes their home page (one line per person):
-
-   ```sql
-   update public.profiles set sales_person_id = (select id from public.sales_persons where name = 'VIVEK')
-   where id = (select id from auth.users where email = 'vivek@silverlynxoman.com');
-   ```
-
-   Users without a link (managers, pricing) keep the dashboard.
+   Roles: `admin` (everything, including delete and managing users), `editor` (add / edit / import), `viewer` (read-only, the default).
+5. Everyone else is set up in the app: sign in as that admin and open the avatar menu → **Users and roles**. Give each person their role, and link each sales person's login to their name in the register, so the game plan becomes their home page. Users without a link (managers, pricing) keep the dashboard. Invited users appear there as soon as they are invited.
 
 ### 3. Run locally
 

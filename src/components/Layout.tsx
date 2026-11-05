@@ -16,7 +16,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export function Layout() {
-  const { profile, session, canEdit, mustSetPassword, signOut } = useAuth();
+  const { profile, session, canEdit, isAdmin, mustSetPassword, signOut } = useAuth();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const exporter = useRegisterExport();
@@ -105,6 +105,7 @@ export function Layout() {
               }
               items={[
                 { label: "Account and password", icon: "user", onSelect: () => navigate("/account") },
+                ...(isAdmin ? [{ label: "Users and roles", icon: "userCog" as const, onSelect: () => navigate("/admin/users") }] : []),
                 { label: "Sign out", icon: "logout", onSelect: () => void signOut(), separatorBefore: true },
               ]}
             />
