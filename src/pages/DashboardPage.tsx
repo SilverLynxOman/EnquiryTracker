@@ -3,33 +3,15 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { SalespersonTable } from "../components/SalespersonTable";
-import { Alert, Card, Empty, Spinner, Stat } from "../components/ui";
-import { countRegister, fetchFollowUps, fetchPeriodStats, fetchSalespersonSummary } from "../lib/api";
+import { Alert, Card, Empty, Spinner } from "../components/ui";
+import { countRegister, fetchFollowUps, fetchSalespersonSummary } from "../lib/api";
 import { displayName } from "../lib/display";
-import { addDays, errorMessage, firstOfMonth, fmtDate, fmtMoney, fmtPercent, todayIso } from "../lib/format";
+import { addDays, errorMessage, firstOfMonth, fmtDate, todayIso } from "../lib/format";
 import { STALE_DAYS, staleQuoteFilters } from "../lib/followUps";
-import type { EnquiryRow, PeriodStats } from "../lib/types";
+import type { EnquiryRow } from "../lib/types";
+import { KpiStrip } from "./dashboard/KpiStrip";
 import { PersonPicker } from "./window/PersonPicker";
 import { TeamVoyageCard } from "./voyage/TeamVoyage";
-
-function StatsRow({ title, stats }: { title: string; stats: PeriodStats | undefined }) {
-  return (
-    <div>
-      <h2 className="mb-2 text-sm font-semibold text-ink-heading">{title}</h2>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Stat label="Enquiries" value={stats?.enquiries ?? "—"} />
-        <Stat label="Quoted" value={stats?.quoted ?? "—"} />
-        <Stat label="Confirmed" value={stats?.confirmed ?? "—"} sub="by confirmation date" />
-        <Stat
-          label="Conversion"
-          value={stats ? fmtPercent(stats.converted, stats.enquiries) : "—"}
-          sub={stats ? `${stats.converted} of ${stats.enquiries} enquiries confirmed` : undefined}
-        />
-        <Stat label="Profit" value={stats ? fmtMoney(stats.profit) : "—"} sub={stats ? `on sales of ${fmtMoney(stats.sell_total)}` : undefined} />
-      </div>
-    </div>
-  );
-}
 
 function FollowUpList({
   title,
@@ -72,20 +54,17 @@ export default function DashboardPage() {
   const monthStart = firstOfMonth(today);
   const since = addDays(today, -30);
 
-  const todayStats = useQuery({ queryKey: ["dashboard", "stats", today, today], queryFn: () => fetchPeriodStats(today, today) });
-  const monthStats = useQuery({ queryKey: ["dashboard", "stats", monthStart, today], queryFn: () => fetchPeriodStats(monthStart, today) });
   const people = useQuery({ queryKey: ["dashboard", "people", monthStart, today], queryFn: () => fetchSalespersonSummary(monthStart, today) });
   const awaitingQuote = useQuery({ queryKey: ["dashboard", "follow", "new", since], queryFn: () => fetchFollowUps("new", since) });
   const awaitingConfirm = useQuery({ queryKey: ["dashboard", "follow", "quoted", since], queryFn: () => fetchFollowUps("quoted", since) });
   const stale = useQuery({ queryKey: ["dashboard", "stale-quotes", today], queryFn: () => countRegister(staleQuoteFilters(today)) });
 
-  const error = todayStats.error ?? monthStats.error ?? people.error ?? awaitingQuote.error ?? awaitingConfirm.error;
+  const error = people.error ?? awaitingQuote.error ?? awaitingConfirm.error;
 
   return (
     <div className="space-y-6">
       {error && <Alert>{errorMessage(error)}</Alert>}
-      <StatsRow title={`Today — ${fmtDate(today)}`} stats={todayStats.data} />
-      <StatsRow title={`Month to date — ${fmtDate(monthStart)} to ${fmtDate(today)}`} stats={monthStats.data} />
+      <KpiStrip today={today} />
 
       {/* Sales staff see only their own enquiries: no links to other people's open quotes. */}
       <TeamVoyageCard today={today} personLinks={seesAll} actions={seesAll ? <PersonPicker /> : undefined} />
