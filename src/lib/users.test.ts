@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { UserAccount } from "./types";
-import { addedOn, applyChange, changeNotice, joinNames, lastSignIn, linkedTo, sharedLinks, userName } from "./users";
+import {
+  accessState,
+  activityLabel,
+  addedOn,
+  applyChange,
+  changeNotice,
+  generatePassword,
+  joinNames,
+  lastSignIn,
+  linkedTo,
+  seesOwnOnly,
+  sharedLinks,
+  userName,
+} from "./users";
 
 const VIVEK = "sp-vivek";
 const ANWAR = "sp-anwar";
@@ -15,6 +28,11 @@ function user(id: string, over: Partial<UserAccount> = {}): UserAccount {
     sales_person_name: null,
     last_sign_in_at: null,
     created_at: "2026-11-01T08:00:00Z",
+    invited_at: null,
+    confirmed_at: "2026-11-01T08:05:00Z",
+    disabled_at: null,
+    last_change_at: null,
+    changes_7d: 0,
     ...over,
   };
 }
@@ -123,5 +141,46 @@ describe("changeNotice", () => {
     expect(changeNotice({ user: chen, salesPersonId: VIVEK, moveLink: true }, [ahmed], "VIVEK")).toBe("Chen is now linked to Vivek, in place of Ahmed Ali.");
     expect(changeNotice({ user: chen, salesPersonId: VIVEK }, [ahmed], "VIVEK")).toBe("Chen and Ahmed Ali are now both linked to Vivek.");
     expect(changeNotice({ user: chen, salesPersonId: VIVEK }, [ahmed, bilal], "VIVEK")).toBe("Chen, Ahmed Ali and Bilal are now all linked to Vivek.");
+  });
+});
+
+describe("access and activity", () => {
+  it("tells active, invited and turned-off logins apart", () => {
+    expect(accessState(ahmed)).toBe("active");
+    expect(accessState(user("new", { invited_at: "2026-11-05T08:00:00Z", confirmed_at: null }))).toBe("invited");
+    // Signed in once (e.g. created with a password): active even without a confirmation time.
+    expect(accessState(user("old", { confirmed_at: null, last_sign_in_at: "2026-11-02T08:00:00Z" }))).toBe("active");
+    expect(accessState(user("gone", { disabled_at: "2026-11-05T09:00:00Z" }))).toBe("off");
+  });
+
+  it("knows who sees only their own enquiries", () => {
+    expect(seesOwnOnly(ahmed)).toBe(true);
+    expect(seesOwnOnly({ ...ahmed, role: "editor" })).toBe(true);
+    expect(seesOwnOnly({ ...ahmed, role: "admin" })).toBe(false);
+    expect(seesOwnOnly(pricing)).toBe(false);
+    expect(seesOwnOnly(user("pricing-editor", { role: "editor" }))).toBe(false);
+  });
+
+  it("sums up recent work in the register", () => {
+    const now = new Date(2026, 10, 5, 15, 0);
+    expect(activityLabel(ahmed, now)).toBe("No changes yet");
+    expect(activityLabel({ changes_7d: 14, last_change_at: new Date(2026, 10, 5, 9, 12).toISOString() }, now)).toBe(
+      "14 changes this week · last Today, 09:12",
+    );
+    expect(activityLabel({ changes_7d: 1, last_change_at: new Date(2026, 10, 4, 17, 40).toISOString() }, now)).toBe(
+      "1 change this week · last Yesterday, 17:40",
+    );
+    expect(activityLabel({ changes_7d: 0, last_change_at: new Date(2026, 9, 20, 10, 0).toISOString() }, now)).toBe(
+      "No changes this week · last 20 Oct 2026",
+    );
+  });
+});
+
+describe("generatePassword", () => {
+  it("makes 12 unambiguous letters and digits in three groups", () => {
+    const pw = generatePassword();
+    expect(pw).toMatch(/^[A-HJ-NP-Za-km-z2-9]{4}-[A-HJ-NP-Za-km-z2-9]{4}-[A-HJ-NP-Za-km-z2-9]{4}$/);
+    expect(generatePassword()).not.toBe(pw);
+    expect(generatePassword((n) => new Uint32Array(n))).toBe("AAAA-AAAA-AAAA");
   });
 });

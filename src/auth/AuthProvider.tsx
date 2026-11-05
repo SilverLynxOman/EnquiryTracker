@@ -9,12 +9,23 @@ interface AuthState {
   loading: boolean;
   /** Signed in, and the profile (role, sales person) is still being read. */
   profileLoading: boolean;
+  /** Owner, admin or editor, with access on. */
   canEdit: boolean;
+  /** Owner or admin, with access on. */
   isAdmin: boolean;
-  /** Signed in from an invite or reset link and has not chosen a password yet. */
+  /** The organisation owner: manages logins in Settings. */
+  isOwner: boolean;
+  /**
+   * Sees every enquiry: owners, admins and logins not linked to a sales person. Sales staff (editors and viewers
+   * linked to a sales person) see only their own; the database enforces it (public.sees_all_enquiries).
+   */
+  seesAll: boolean;
+  /** The owner turned this login's access off. */
+  disabled: boolean;
+  /** Signed in from an invite or reset link, or with a temporary password, and has not chosen a password yet. */
   mustSetPassword: boolean;
   passwordSet: () => void;
-  /** Reads the profile again, after an admin changed their own (Users page). The current one stays meanwhile. */
+  /** Reads the profile again, after the owner changed their own (Settings). The current one stays meanwhile. */
   refreshProfile: () => void;
   signOut: () => Promise<void>;
 }
@@ -60,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     supabase
       .from("profiles")
-      .select("id, full_name, role, sales_person_id")
+      .select("id, full_name, role, sales_person_id, disabled_at")
       .eq("id", userId)
       .maybeSingle()
       .then(({ data }) => {
@@ -73,14 +84,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [userId, profileVersion]);
 
+  // A login whose access is off has no role, as in the database (public.app_role).
+  const role = profile && !profile.disabled_at ? profile.role : null;
+  const isAdmin = role === "owner" || role === "admin";
+  // Set by the owner with a temporary password (the user-admin Edge Function).
+  const temporaryPassword = session?.user.user_metadata?.must_change_password === true;
   const value: AuthState = {
     session,
     profile,
     loading,
     profileLoading: userId !== null && profileFor !== userId,
-    canEdit: profile?.role === "admin" || profile?.role === "editor",
-    isAdmin: profile?.role === "admin",
-    mustSetPassword: mustSetPassword && session !== null,
+    canEdit: isAdmin || role === "editor",
+    isAdmin,
+    isOwner: role === "owner",
+    seesAll: isAdmin || (role !== null && !profile?.sales_person_id),
+    disabled: !!profile?.disabled_at,
+    mustSetPassword: (mustSetPassword || temporaryPassword) && session !== null,
     passwordSet: () => {
       clearNeedsPassword();
       setMustSetPassword(false);

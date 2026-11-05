@@ -1,25 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
+import { Icon } from "../components/icons";
 import { Alert, Button, Empty } from "../components/ui";
 import { fetchSalesPersons, fetchUsers, unlinkSalesPerson, updateUser } from "../lib/api";
 import { errorMessage } from "../lib/format";
 import type { UserAccount } from "../lib/types";
-import { applyChange, changeNotice, linkedTo, ROLE_META, ROLES, sharedLinks, userName, type UserChange } from "../lib/users";
-import { SharedLinkDialog } from "./users/SharedLinkDialog";
-import { cellKey, UserTable, type PendingValues } from "./users/UserTable";
+import { accessState, applyChange, changeNotice, linkedTo, ROLE_META, ROLES, sharedLinks, userName, type UserChange } from "../lib/users";
+import { InviteDialog } from "./settings/InviteDialog";
+import { SharedLinkDialog } from "./settings/SharedLinkDialog";
+import { UserActionDialog, type UserAction } from "./settings/UserActionDialog";
+import { cellKey, UserTable, type PendingValues } from "./settings/UserTable";
 
 const USERS = ["admin-users"] as const;
 
 const keyOf = (c: UserChange) => cellKey(c.user.id, "role" in c ? "role" : "salesPerson");
 const valueOf = (c: UserChange) => ("role" in c ? c.role : c.salesPersonId);
 
-/** Admins only: every staff login, with its role and linked sales person changed in place. */
-export default function UsersPage() {
-  const { session, profile, isAdmin, profileLoading, refreshProfile } = useAuth();
+/**
+ * Settings, for the organisation owner only (the menu shows it to no one else, and the database refuses others):
+ * every staff login, its role, sales person and access, invitations and password resets.
+ */
+export default function SettingsPage() {
+  const { session, profile, isOwner, profileLoading, refreshProfile } = useAuth();
   const queryClient = useQueryClient();
-  const users = useQuery({ queryKey: USERS, queryFn: fetchUsers, enabled: isAdmin });
-  const people = useQuery({ queryKey: ["sales-persons"], queryFn: fetchSalesPersons, staleTime: 300_000, enabled: isAdmin });
+  const users = useQuery({ queryKey: USERS, queryFn: fetchUsers, enabled: isOwner });
+  const people = useQuery({ queryKey: ["sales-persons"], queryFn: fetchSalesPersons, staleTime: 300_000, enabled: isOwner });
 
   const [pending, setPending] = useState<PendingValues>(new Map());
   /** A sales person chosen for a login while other logins are linked to it: asked about first. */
@@ -29,12 +35,14 @@ export default function UsersPage() {
     others: UserAccount[];
     choice?: "move" | "both";
   } | null>(null);
+  const [inviting, setInviting] = useState(false);
+  const [acting, setActing] = useState<{ user: UserAccount; action: UserAction } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!notice) return;
-    const t = setTimeout(() => setNotice(null), 5000);
+    const t = setTimeout(() => setNotice(null), 6000);
     return () => clearTimeout(t);
   }, [notice]);
 
@@ -64,7 +72,7 @@ export default function UsersPage() {
       queryClient.setQueryData<UserAccount[]>(USERS, (list) => list && applyChange(list, change, salesPerson));
       setShareAsk(null);
       setNotice(changeNotice(change, others, salesPerson));
-      // An admin who links themself to a sales person gets their open quotes (The Window) as home page straight away.
+      // The owner linking themself to a sales person gets their open quotes (The Window) as home page straight away.
       if (change.user.id === session?.user.id) refreshProfile();
     },
     onError: (e, change) => setFailure(`${userName(change.user)} was not changed. ${errorMessage(e)}`),
@@ -77,6 +85,12 @@ export default function UsersPage() {
       void queryClient.invalidateQueries({ queryKey: USERS });
     },
   });
+
+  const chooseRole = (user: UserAccount, role: UserAccount["role"]) => {
+    // Owners manage everyone, including you: asked first.
+    if (role === "owner") setActing({ user, action: "make_owner" });
+    else save.mutate({ user, role });
+  };
 
   const chooseSalesPerson = (user: UserAccount, salesPersonId: string | null) => {
     const others = salesPersonId ? linkedTo(users.data ?? [], salesPersonId, user.id) : [];
@@ -94,32 +108,41 @@ export default function UsersPage() {
     save.mutate({ user: shareAsk.user, salesPersonId: shareAsk.salesPersonId, moveLink: choice === "move" });
   };
 
+  const done = (message: string) => {
+    setInviting(false);
+    setActing(null);
+    setNotice(message);
+    void queryClient.invalidateQueries({ queryKey: USERS });
+    if (acting?.user.id === session?.user.id) refreshProfile();
+  };
+
   const loading = profileLoading || users.isPending || people.isPending;
   const loadError = users.error ?? people.error;
   const retry = () => {
     if (users.error) void users.refetch();
     if (people.error) void people.refetch();
   };
-  const count = users.data?.length;
+  const list = users.data ?? [];
+  const counts = { invited: list.filter((u) => accessState(u) === "invited").length, off: list.filter((u) => accessState(u) === "off").length };
 
   return (
     <div className="space-y-3">
       {/* Opened from the avatar menu, so no navigation item names the page: this header does. */}
       <div className="flex h-12 items-center justify-between gap-4 border-b border-line">
-        <h1 className="text-title font-semibold text-ink">Users and roles</h1>
-        <div className="flex items-center gap-2 text-meta text-ink-muted">
-          {users.isFetching && !users.isPending && (
-            <span className="size-3.5 animate-spin rounded-full border-2 border-line border-t-primary" aria-hidden="true" />
-          )}
-          {count !== undefined && `${count.toLocaleString()} ${count === 1 ? "login" : "logins"}`}
-        </div>
+        <h1 className="text-title font-semibold text-ink">Settings</h1>
+        {isOwner && (
+          <Button onClick={() => setInviting(true)} disabled={!users.data || !people.data}>
+            <Icon name="plus" />
+            Invite someone
+          </Button>
+        )}
       </div>
 
-      {!profileLoading && !isAdmin ? (
+      {!profileLoading && !isOwner ? (
         <section className="rounded-panel border border-line bg-surface">
           <Empty>
             {profile
-              ? "Only administrators can see and change users. Ask one if your role or sales person should change."
+              ? "Settings are for the organisation owner. Ask them if your role, sales person or access should change."
               : "Your role could not be read, so this page stays closed. Reload the page to try again."}
           </Empty>
         </section>
@@ -151,6 +174,22 @@ export default function UsersPage() {
           {/* Nothing to list after a failed first load: the alert above says so. */}
           {(users.data && people.data) || (loading && !loadError) ? (
             <section className="@container overflow-hidden rounded-panel border border-line bg-surface" aria-busy={loading || users.isFetching}>
+              <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-line px-4 py-3">
+                <h2 className="text-body font-semibold text-ink">Users and access</h2>
+                <div className="flex items-center gap-2 text-meta text-ink-muted">
+                  {users.isFetching && !users.isPending && (
+                    <span className="size-3.5 animate-spin rounded-full border-2 border-line border-t-primary" aria-hidden="true" />
+                  )}
+                  {users.data &&
+                    [
+                      `${list.length.toLocaleString()} ${list.length === 1 ? "login" : "logins"}`,
+                      counts.invited > 0 && `${counts.invited} invited`,
+                      counts.off > 0 && `${counts.off} turned off`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                </div>
+              </header>
               {/* relative: screen-reader-only text inside the table is positioned here, so it scrolls with the table. */}
               <div className="relative overflow-x-auto">
                 {!users.data || !people.data ? (
@@ -166,11 +205,12 @@ export default function UsersPage() {
                     meId={session?.user.id}
                     shared={shared}
                     pending={pending}
-                    onRole={(user, role) => save.mutate({ user, role })}
+                    onRole={chooseRole}
                     onSalesPerson={chooseSalesPerson}
+                    onAction={(user, action) => setActing({ user, action })}
                   />
                 ) : (
-                  <Empty>No logins yet. Invite staff from the Supabase dashboard, as described below.</Empty>
+                  <Empty>No logins yet. Invite your staff with the button above.</Empty>
                 )}
               </div>
               <footer className="space-y-1 border-t border-line px-4 py-3 text-meta text-ink-muted">
@@ -184,18 +224,24 @@ export default function UsersPage() {
                   .
                 </p>
                 <p>
-                  Link each sales person's login to their name in the register: their open quotes become their home page. Managers and
-                  pricing stay unlinked and keep the dashboard.
+                  Link each sales person's login to their name in the register: their open quotes become their home page, and as an editor or
+                  viewer they see only their own enquiries. Pricing and managers stay unlinked and see everything.
                 </p>
                 <p>
-                  To add someone, invite them in the Supabase dashboard (Authentication → Users → Invite user). They appear here as
-                  viewers.
+                  Activity counts changes in the register (new enquiries, edits, status changes). Turning access off signs someone out at once; their
+                  work stays.
                 </p>
               </footer>
             </section>
           ) : null}
         </>
       )}
+
+      {inviting && users.data && people.data && (
+        <InviteDialog users={users.data} salesPersons={people.data} onClose={() => setInviting(false)} onDone={done} />
+      )}
+
+      {acting && <UserActionDialog action={acting.action} user={acting.user} onClose={() => setActing(null)} onDone={done} />}
 
       {shareAsk && (
         <SharedLinkDialog

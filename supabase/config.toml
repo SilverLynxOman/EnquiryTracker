@@ -10,3 +10,8 @@ major_version = 17
 # Called by pg_cron with a Vault secret (not a JWT) and by editors with their session token; the function
 # checks both itself (supabase/functions/gmail-sync/index.ts), so the gateway must not require a JWT.
 verify_jwt = false
+
+[functions.user-admin]
+# Called by the owner from Settings with their session token; the function checks the token and that the caller is
+# an active owner itself (supabase/functions/user-admin/index.ts), like gmail-sync.
+verify_jwt = false

@@ -1,16 +1,33 @@
 import { displayName, fmtDateLong } from "./display";
 import type { Role, UserAccount } from "./types";
 
-// Rules of the Users page (src/pages/UsersPage.tsx): how logins are named, what each role may do, sign-in times,
-// and which logins share a sales person. The server side is supabase/migrations/20261105035359_admin_users.sql.
+// Rules of Settings → Users and access (src/pages/SettingsPage.tsx): how logins are named, what each role may do,
+// sign-in and activity times, invitation and access state, and which logins share a sales person. The server side is
+// supabase/migrations/20261105113220_owner_access.sql, 20261105172357_own_enquiries.sql and the user-admin Edge Function.
 
-export const ROLES: Role[] = ["admin", "editor", "viewer"];
+export const ROLES: Role[] = ["owner", "admin", "editor", "viewer"];
 
 export const ROLE_META: Record<Role, { label: string; article: "a" | "an"; can: string }> = {
-  admin: { label: "Admin", article: "an", can: "everything, including deleting enquiries and managing users" },
+  owner: { label: "Owner", article: "an", can: "everything, and manages logins in Settings" },
+  admin: { label: "Admin", article: "an", can: "everything else, including merging and deleting" },
   editor: { label: "Editor", article: "an", can: "adds, edits and imports enquiries" },
   viewer: { label: "Viewer", article: "a", can: "reads only" },
 };
+
+/** Roles an invitation can give; owner is given from the table, by an owner. */
+export const INVITE_ROLES: Role[] = ["admin", "editor", "viewer"];
+
+export type AccessState = "active" | "invited" | "off";
+
+/** Access turned off; invited and not accepted yet; or active. */
+export function accessState(u: Pick<UserAccount, "disabled_at" | "confirmed_at" | "last_sign_in_at">): AccessState {
+  if (u.disabled_at) return "off";
+  return u.confirmed_at || u.last_sign_in_at ? "active" : "invited";
+}
+
+/** Whether the login sees only its sales person's enquiries (public.sees_all_enquiries is false for it). */
+export const seesOwnOnly = (u: Pick<UserAccount, "role" | "sales_person_id">) =>
+  !!u.sales_person_id && (u.role === "editor" || u.role === "viewer");
 
 /** One save on the Users page: a new role, or a new sales person (moveLink: unlink the other logins on it). */
 export type UserChange =
@@ -54,6 +71,21 @@ export function lastSignIn(ts: string | null, now: Date = new Date()): string {
   if (day === localDay(now)) return `Today, ${time}`;
   if (day === localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))) return `Yesterday, ${time}`;
   return fmtDateLong(day);
+}
+
+/** "14 changes this week · last Today, 09:12", "No changes this week · last 03 Nov 2026", "No changes yet". */
+export function activityLabel(u: Pick<UserAccount, "changes_7d" | "last_change_at">, now: Date = new Date()): string {
+  if (!u.last_change_at) return "No changes yet";
+  const week = u.changes_7d > 0 ? `${u.changes_7d.toLocaleString("en-US")} ${u.changes_7d === 1 ? "change" : "changes"} this week` : "No changes this week";
+  return `${week} · last ${lastSignIn(u.last_change_at, now)}`;
+}
+
+const PASSWORD_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+/** A temporary password to read out or send: 12 letters and digits without look-alikes (0/O, 1/l/I), in groups. */
+export function generatePassword(random: (n: number) => Uint32Array = (n) => crypto.getRandomValues(new Uint32Array(n))): string {
+  const chars = Array.from(random(12), (v) => PASSWORD_LETTERS[v % PASSWORD_LETTERS.length]);
+  return [chars.slice(0, 4), chars.slice(4, 8), chars.slice(8)].map((g) => g.join("")).join("-");
 }
 
 /** "Added 04 Nov 2026": when the login was invited or created. */

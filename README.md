@@ -25,7 +25,8 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 | Reports | Daily, weekly (Sat–Fri) and monthly reports: enquiries raised plus earlier ones confirmed, sales-person and mode totals; Excel export in the old report layouts. Analytics: monthly trend and profit chart; conversion and profit by sales person, customer, agent, lane, mode or trade type |
 | Masters | **Customers**, **Agents** and **Ports**: every name with its counts; rename; **possible duplicates** grouped by similar spelling, merged in one step (admins). Old names and spellings are remembered, so imports and e-mails still find them; a remembered port spelling becomes the standard name whenever it is typed or imported |
 | Inbox | New enquiries read from the pricing mailbox, ready to create with one click; e-mails to review; every enquiry keeps its e-mail history (see [E-mail intake](#e-mail-intake)) |
-| Users and roles | Admins only, from the avatar menu: every staff login with its e-mail address and last sign-in; change its role or the sales person it is linked to in place. Asks before a second login is linked to the same sales person |
+| Settings | The owner only, from the avatar menu: every staff login with its access (active, invited, turned off), role, sales person, last sign-in and changes this week. Invite someone, invite again, reset a password, set a temporary password, turn access off and on, make another owner. Asks before a second login is linked to the same sales person |
+| Who sees what | Owners and admins see everything; editors add, edit and import; viewers read. A sales person's login (an editor or viewer linked to a sales person) sees only that sales person's enquiries and has no inbox or import; pricing and managers stay unlinked and see everything |
 
 ## Project layout
 
@@ -100,16 +101,16 @@ In the Supabase dashboard:
 
 1. **Authentication → Sign In / Providers**: disable *Allow new users to sign up*. Staff are invited instead.
 2. **Authentication → URL Configuration**: set *Site URL* to the Cloudflare Pages URL. Add `http://localhost:5173/**` and `https://<project>.pages.dev/**` to the redirect URLs.
-3. **Authentication → Users → Invite user** for each member of staff. Invited users follow the e-mail link, then set a password on the *Account* page.
-4. Make yourself admin (SQL editor):
+3. Make the organisation owner (SQL editor), after inviting them once from **Authentication → Users → Invite user**:
 
    ```sql
-   update public.profiles set role = 'admin'
-   where id = (select id from auth.users where email = 'you@silverlynxoman.com');
+   update public.profiles set role = 'owner'
+   where id = (select id from auth.users where email = 'owner@silverlynxoman.com');
    ```
 
-   Roles: `admin` (everything, including delete and managing users), `editor` (add / edit / import), `viewer` (read-only, the default).
-5. Everyone else is set up in the app: sign in as that admin and open the avatar menu → **Users and roles**. Give each person their role, and link each sales person's login to their name in the register, so their open quotes (The Window) become their home page. Users without a link (managers, pricing) keep the dashboard. Invited users appear there as soon as they are invited.
+   Roles: `owner` (everything, and manages logins in Settings), `admin` (everything else, including merging and deleting), `editor` (add / edit / import), `viewer` (read-only, the default).
+4. Deploy the `user-admin` Edge Function (`npx supabase functions deploy user-admin --no-verify-jwt`); it checks itself that the caller is the owner.
+5. Everyone else is set up in the app: the owner opens the avatar menu → **Settings** → **Invite someone**, with their role and sales person. The invitation link is shown to send by WhatsApp or e-mail; *E-mail it from Supabase* needs your own SMTP (Authentication → Emails), because Supabase's built-in mailer sends only a few e-mails an hour and only to the project team. Link each sales person's login to their name in the register: their open quotes (The Window) become their home page and they see only their own enquiries. Users without a link (managers, pricing) keep the dashboard and see everything.
 
 ### 3. Run locally
 
@@ -129,6 +130,16 @@ npm run dev
 
 ```bash
 npm test
+```
+
+The browser smoke test (sign in, add an enquiry, import) builds the app against a mocked Supabase and runs in Chromium:
+
+```bash
+npx playwright install chromium
+```
+
+```bash
+npm run test:e2e
 ```
 
 ### 4. GitHub

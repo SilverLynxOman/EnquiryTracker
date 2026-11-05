@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { RequireAuth } from "./auth/RequireAuth";
+import { RequireSeesAll } from "./auth/RequireSeesAll";
 import { Layout } from "./components/Layout";
 import { Spinner } from "./components/ui";
 import AccountPage from "./pages/AccountPage";
@@ -22,8 +23,8 @@ const ImportPage = lazy(() => import("./pages/ImportPage"));
 const PeriodReportPage = lazy(() => import("./pages/reports/PeriodReportPage"));
 const AnalyticsPage = lazy(() => import("./pages/reports/AnalyticsPage"));
 const TvPage = lazy(() => import("./pages/voyage/TvPage"));
-// Admins only, and rarely opened.
-const UsersPage = lazy(() => import("./pages/UsersPage"));
+// The owner only, and rarely opened.
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 
 export default function App() {
   return (
@@ -55,7 +56,14 @@ export default function App() {
         <Route path="enquiries/:id" element={<EnquiryPage />} />
         <Route path="enquiries/:id/edit" element={<EnquiryFormPage />} />
         <Route path="follow-ups" element={<FollowUpsPage />} />
-        <Route path="inbox" element={<InboxPage />} />
+        <Route
+          path="inbox"
+          element={
+            <RequireSeesAll>
+              <InboxPage />
+            </RequireSeesAll>
+          }
+        />
         <Route element={<MastersLayout />}>
           {/* key: a fresh page (filters, selection) per list */}
           <Route path="customers" element={<MasterListPage key="customers" kind={CUSTOMERS} />} />
@@ -65,9 +73,11 @@ export default function App() {
         <Route
           path="import"
           element={
-            <Suspense fallback={<Spinner />}>
-              <ImportPage />
-            </Suspense>
+            <RequireSeesAll>
+              <Suspense fallback={<Spinner />}>
+                <ImportPage />
+              </Suspense>
+            </RequireSeesAll>
           }
         />
         <Route path="reports" element={<ReportsLayout />}>
@@ -80,13 +90,15 @@ export default function App() {
         </Route>
         <Route path="account" element={<AccountPage />} />
         <Route
-          path="admin/users"
+          path="settings"
           element={
             <Suspense fallback={<Spinner />}>
-              <UsersPage />
+              <SettingsPage />
             </Suspense>
           }
         />
+        {/* The old address of the users page, which Settings replaced. */}
+        <Route path="admin/users" element={<Navigate to="/settings" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
