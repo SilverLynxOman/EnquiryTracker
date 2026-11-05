@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  type BatchClassifier,
+  type BatchDb,
+  type BatchItem,
   DEFAULT_OPTIONS,
+  type PendingBatch,
   runReclassify,
+  runReclassifyBatch,
   runSync,
   type IngestPayload,
   type MatchInput,
@@ -269,5 +274,125 @@ describe("runReclassify", () => {
     const stats = await runReclassify(h.deps, 40);
     expect(h.reingested).toEqual([]);
     expect(stats).toMatchObject({ candidates: 2, processed: 0, deferred: 2 });
+  });
+});
+
+describe("runReclassifyBatch", () => {
+  const stored = (id: string, threadId: string): UnclassifiedEmail => ({ id: `row-${id}`, gmail_message_id: id, gmail_thread_id: threadId });
+  const messages = () => [
+    gmailMessage({ id: "a", threadId: "t1", ...at("2026-11-04T10:30:00Z") }),
+    gmailMessage({ id: "b", threadId: "t1", subject: "RE: SL262700", ...at("2026-11-04T11:00:00Z") }),
+    gmailMessage({ id: "c", threadId: "t2", ...at("2026-11-04T10:45:00Z") }),
+  ];
+  const storedContext = (input: MatchInput): Partial<MatchContext> => ({
+    already_ingested: true,
+    ...(input.sl_refs.includes("SL262700")
+      ? { ref_matches: [{ reference: "SL262700", enquiry_id: "e1", enquiry_date: "2026-11-01", status: "new" }] }
+      : {}),
+  });
+  // The live classifier must never run in batch mode.
+  const noLiveCalls: SyncDeps["classify"] = async () => {
+    throw new Error("live classifier called");
+  };
+
+  function fakeBatch(opts: { pending?: PendingBatch | null; ended?: boolean; results?: Map<string, { answer: unknown } | { error: string }>; open?: string[] } = {}) {
+    const state = {
+      submitted: [] as BatchItem[][],
+      saved: [] as { batchId: string; items: UnclassifiedEmail[] }[],
+      finished: [] as { id: string; state: string }[],
+    };
+    const client: BatchClassifier = {
+      async submit(items) {
+        state.submitted.push(items);
+        return "msgbatch_1";
+      },
+      async isEnded() {
+        return opts.ended ?? true;
+      },
+      async results() {
+        return opts.results ?? new Map();
+      },
+    };
+    const db: BatchDb = {
+      async pendingBatch() {
+        return opts.pending ?? null;
+      },
+      async saveBatch(batchId, items) {
+        state.saved.push({ batchId, items });
+      },
+      async finishBatch(id, stats) {
+        state.finished.push({ id, state: stats.state });
+      },
+      async stillUnclassified(ids) {
+        return new Set(ids.filter((id) => !opts.open || opts.open.includes(id)));
+      },
+    };
+    return { client, db, state };
+  }
+
+  it("files what the rules decide at once and submits the rest as one batch", async () => {
+    const h = harness(messages(), {
+      context: storedContext,
+      classify: noLiveCalls,
+      unclassified: [stored("a", "t1"), stored("c", "t2"), stored("b", "t1")],
+    });
+    const b = fakeBatch();
+    const stats = await runReclassifyBatch(h.deps, b, 200);
+    expect(h.reingested.map((r) => r.emailId)).toEqual(["row-b"]);
+    expect(h.reingested[0].payload).toMatchObject({ decision: { status: "linked", enquiry_id: "e1" } });
+    expect(b.state.submitted).toHaveLength(1);
+    expect(b.state.submitted[0].map((i) => i.customId).sort()).toEqual(["row-a", "row-c"]);
+    expect(b.state.submitted[0][0].input.email.gmail_message_id).toMatch(/^[ac]$/);
+    expect(b.state.saved).toEqual([{ batchId: "msgbatch_1", items: expect.arrayContaining([stored("a", "t1"), stored("c", "t2")]) }]);
+    expect(h.ended).toEqual([]);
+    expect(stats).toMatchObject({ state: "submitted", batch_id: "msgbatch_1", submitted: 2, candidates: 3, processed: 1, linked: 1, errors: 0 });
+  });
+
+  it("waits while the batch is still running", async () => {
+    const h = harness(messages(), { context: storedContext, classify: noLiveCalls });
+    const b = fakeBatch({ pending: { id: "b1", batch_id: "msgbatch_1", items: [stored("a", "t1")] }, ended: false });
+    const stats = await runReclassifyBatch(h.deps, b, 200);
+    expect(stats).toMatchObject({ state: "waiting", batch_id: "msgbatch_1" });
+    expect(h.reingested).toEqual([]);
+    expect(b.state.finished).toEqual([]);
+    expect(b.state.submitted).toEqual([]);
+  });
+
+  it("files each answer once the batch has ended, leaves failed ones and skips rows handled meanwhile", async () => {
+    const h = harness(messages(), { context: storedContext, classify: noLiveCalls });
+    const b = fakeBatch({
+      pending: { id: "b1", batch_id: "msgbatch_1", items: [stored("a", "t1"), stored("c", "t2"), stored("x", "t3")] },
+      results: new Map<string, { answer: unknown } | { error: string }>([
+        ["row-a", { answer: aiAnswer() }],
+        ["row-c", { error: "overloaded" }],
+      ]),
+      open: ["row-a", "row-c"], // row-x was handled by staff meanwhile
+    });
+    const stats = await runReclassifyBatch(h.deps, b, 200);
+    expect(h.reingested.map((r) => r.emailId)).toEqual(["row-a"]);
+    expect(h.reingested[0].payload).toMatchObject({ decision: { status: "draft", classification: "new_enquiry" } });
+    expect(stats).toMatchObject({ state: "collected", candidates: 2, processed: 1, draft: 1, skipped: 1, errors: 1 });
+    expect(stats.error_messages[0]).toBe("c: still not classified: overloaded");
+    expect(b.state.finished).toEqual([{ id: "b1", state: "collected" }]);
+    expect(b.state.submitted).toEqual([]);
+  });
+
+  it("keeps the batch open when collecting runs out of time", async () => {
+    const h = harness(messages(), { context: storedContext, classify: noLiveCalls, options: { timeBudgetMs: -1 } });
+    const b = fakeBatch({
+      pending: { id: "b1", batch_id: "msgbatch_1", items: [stored("a", "t1")] },
+      results: new Map([["row-a", { answer: aiAnswer() }]]),
+    });
+    const stats = await runReclassifyBatch(h.deps, b, 200);
+    expect(stats).toMatchObject({ state: "collecting", deferred: 1 });
+    expect(b.state.finished).toEqual([]);
+  });
+
+  it("does nothing when there is nothing to re-classify", async () => {
+    const h = harness([], { classify: noLiveCalls });
+    const b = fakeBatch();
+    const stats = await runReclassifyBatch(h.deps, b, 200);
+    expect(stats).toMatchObject({ state: "nothing_to_do", candidates: 0, submitted: 0 });
+    expect(b.state.submitted).toEqual([]);
   });
 });

@@ -3,8 +3,11 @@
 // Called every few minutes by pg_cron (supabase/email_sync_schedule.sql) with the random secret kept in
 // Vault as gmail_sync_secret, and on demand by an editor's "Check mail now" button (their own session
 // token). Deploy with --no-verify-jwt: this function checks both itself.
-// POST {"reclassify": true, "limit": 40} instead re-classifies stored e-mails that went to review as
-// "Not classified" (e.g. Claude had no credits), oldest first; repeat until it reports 0 candidates.
+// POST {"reclassify": true} instead re-classifies stored e-mails that went to review as "Not classified"
+// (e.g. Claude had no credits) through a Message Batch at half price: the first call submits the batch
+// (up to "limit", default 200), later calls collect it once it has ended (usually within an hour). Call it
+// until it reports state "nothing_to_do". {"reclassify": true, "mode": "now"} does it live instead
+// (full price, up to 80 per call).
 //
 // Secrets (Supabase dashboard → Edge Functions → Secrets, or npx supabase secrets set NAME=value):
 //   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN   OAuth client + refresh token (gmail.readonly)
@@ -20,15 +23,17 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.118.0";
 import { GmailApi } from "../_shared/email/gmail.ts";
 import {
+  type BatchDb,
   DEFAULT_OPTIONS,
   runReclassify,
+  runReclassifyBatch,
   runSync,
   type SyncDb,
   type SyncStorage,
   type UnclassifiedEmail,
 } from "../_shared/email/sync.ts";
 import type { MatchContext } from "../_shared/email/types.ts";
-import { createClaudeClassifier, type Effort } from "./claude.ts";
+import { type ClaudeOptions, createClaudeBatchClassifier, createClaudeClassifier, type Effort } from "./claude.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -139,6 +144,45 @@ function database(admin: SupabaseClient): SyncDb {
   };
 }
 
+function batchStore(admin: SupabaseClient): BatchDb {
+  return {
+    async pendingBatch() {
+      const row = unwrap(
+        await admin.from("email_ai_batches").select("id, batch_id, items").eq("status", "submitted").order("submitted_at").limit(1).maybeSingle(),
+        "email_ai_batches",
+      ) as { id: string; batch_id: string; items: UnclassifiedEmail[] } | null;
+      return row;
+    },
+    async saveBatch(batchId, items) {
+      unwrap(await admin.from("email_ai_batches").insert({ batch_id: batchId, items }), "email_ai_batches");
+    },
+    async finishBatch(id, stats) {
+      unwrap(
+        await admin.from("email_ai_batches").update({ status: "collected", collected_at: new Date().toISOString(), stats }).eq("id", id),
+        "email_ai_batches",
+      );
+    },
+    async stillUnclassified(ids) {
+      const open = new Set<string>();
+      for (let i = 0; i < ids.length; i += 200) {
+        const rows = unwrap(
+          await admin
+            .from("email_messages")
+            .select("id")
+            .in("id", ids.slice(i, i + 200))
+            .eq("status", "review")
+            .is("enquiry_id", null)
+            .is("draft_id", null)
+            .like("note", "Not classified:%"),
+          "email_messages",
+        ) as { id: string }[];
+        for (const r of rows) open.add(r.id);
+      }
+      return open;
+    },
+  };
+}
+
 function attachmentStore(admin: SupabaseClient): SyncStorage {
   return {
     async upload(path, bytes, contentType) {
@@ -168,6 +212,14 @@ Deno.serve(async (req) => {
       .map((d) => d.trim().toLowerCase())
       .filter(Boolean);
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim();
+    const claude: ClaudeOptions | null = apiKey
+      ? {
+          apiKey,
+          model: env("ANTHROPIC_MODEL", "claude-opus-5-5"),
+          effort: env("ANTHROPIC_EFFORT", "low") as Effort,
+          mailbox,
+        }
+      : null;
 
     const deps = {
       options: {
@@ -184,20 +236,17 @@ Deno.serve(async (req) => {
       }),
       db: database(admin),
       storage: attachmentStore(admin),
-      classify: apiKey
-        ? createClaudeClassifier({
-            apiKey,
-            model: env("ANTHROPIC_MODEL", "claude-opus-5-5"),
-            effort: env("ANTHROPIC_EFFORT", "low") as Effort,
-            mailbox,
-          })
-        : null,
+      classify: claude ? createClaudeClassifier(claude) : null,
       log: (m: string) => console.log(m),
     };
-    // POST {"reclassify": true, "limit": 40}: re-classify stored "Not classified" e-mails instead of syncing.
-    const body = (await req.json().catch(() => ({}))) as { reclassify?: unknown; limit?: unknown } | null;
+    // POST {"reclassify": true}: re-classify stored "Not classified" e-mails instead of syncing (see the top).
+    const body = (await req.json().catch(() => ({}))) as { reclassify?: unknown; limit?: unknown; mode?: unknown } | null;
     if (body?.reclassify === true) {
-      return json(await runReclassify(deps, Number(body.limit ?? 40)));
+      if (!claude) throw new Error("Claude is not configured (ANTHROPIC_API_KEY): nothing can be re-classified");
+      if (body.mode === "now") return json(await runReclassify(deps, Number(body.limit ?? 40)));
+      return json(
+        await runReclassifyBatch(deps, { client: createClaudeBatchClassifier(claude), db: batchStore(admin) }, Number(body.limit ?? 200)),
+      );
     }
 
     syncing = true; // from here on runSync records its own errors on the mailbox
