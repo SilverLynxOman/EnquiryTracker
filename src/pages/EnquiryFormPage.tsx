@@ -16,7 +16,8 @@ import {
 } from "../lib/api";
 import { draftToPayload } from "../lib/emailDrafts";
 import { describeCommission, mentionsCommission, parseCommission } from "../lib/commission";
-import { errorMessage, fmtMoney, todayIso } from "../lib/format";
+import { errorMessage, fmtDate, fmtMoney, todayIso } from "../lib/format";
+import { parseHouseSubject } from "../lib/houseSubject";
 import { parseQty, round2 } from "../lib/normalize";
 import {
   MODE_LABELS,
@@ -153,6 +154,43 @@ function payloadToForm(p: EnquiryPayload): FormState {
   };
 }
 
+/**
+ * A new enquiry from the "Waiting for reference" link: ?reference=SL262785, plus ?date= (the day the first
+ * e-mail arrived) and ?subject= (a house-style subject: quantity, incoterm and ports). Customer and contact stay
+ * empty: these e-mails are mostly agents quoting us, not the customer.
+ */
+function formFromInbox(params: URLSearchParams): { form: FormState; filled: string[]; date: string | null } | null {
+  const ref = (params.get("reference") ?? "").trim().toUpperCase();
+  if (!/^SL\d{4,}$/.test(ref)) return null;
+  const form: FormState = { ...emptyForm(), reference: ref };
+  const filled: string[] = [];
+
+  const raw = params.get("date") ?? "";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(raw)) && raw <= todayIso() ? raw : null;
+  if (date) {
+    form.enquiry_date = date;
+    filled.push("enquiry date");
+  }
+
+  const house = parseHouseSubject(params.get("subject"));
+  if (house) {
+    const qty = parseQty(house.qty_text);
+    Object.assign(form, {
+      subject: `${ref} ${house.subject}`,
+      qty_text: house.qty_text ?? "",
+      shipment_mode: qty.mode && house.qty_text ? qty.mode : "",
+      units: qty.units == null ? "" : String(qty.units),
+      container_type: qty.containerType ?? "",
+      pol: house.pol,
+      pod: house.pod,
+      trade_type: house.trade_type ?? form.trade_type,
+      requirements: house.incoterm ? `Incoterm: ${house.incoterm}` : "",
+    });
+    filled.push(...(house.qty_text ? ["qty"] : []), "POL", "POD", "mode", "subject", ...(house.incoterm ? ["incoterm"] : []));
+  }
+  return { form, filled, date };
+}
+
 const textOrNull = (v: string) => (v.trim() === "" ? null : v.trim());
 const numOrNull = (v: string) => (v.trim() === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -243,11 +281,10 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
     select: (rows) => [...rows].sort((a, b) => b.enquiries - a.enquiries).map((p) => p.name),
   });
 
-  // ?reference=SL262810 starts a new enquiry under a reference the customer already uses (Inbox, Waiting for reference).
-  const [form, setForm] = useState<FormState>(() => {
-    const ref = !id && !draftId ? (searchParams.get("reference") ?? "").trim().toUpperCase() : "";
-    return /^SL\d{4,}$/.test(ref) ? { ...emptyForm(), reference: ref } : emptyForm();
-  });
+  // ?reference=SL262810&date=…&subject=… starts a new enquiry under a reference the e-mails already cite
+  // (Inbox, Waiting for reference), filled from those e-mails.
+  const [fromInbox] = useState(() => (!id && !draftId ? formFromInbox(searchParams) : null));
+  const [form, setForm] = useState<FormState>(() => fromInbox?.form ?? emptyForm());
   const [loaded, setLoaded] = useState(!id && !draftId);
   const [autoBuy, setAutoBuy] = useState(true);
   const [autoSell, setAutoSell] = useState(true);
@@ -440,6 +477,12 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
           Read from the e-mail: {draft.data.summary} Check the details, then create the enquiry. The e-mail is shown below.
         </Alert>
       )}
+      {fromInbox?.filled.length ? (
+        <Alert kind="info">
+          Filled from the e-mails on {form.reference}: {fromInbox.filled.join(", ")}. They come from the agents, so enter the customer and contact
+          yourself, and check the rest.
+        </Alert>
+      ) : null}
       {(save.error || remove.error) && <Alert>{errorMessage(save.error ?? remove.error)}</Alert>}
       {showChecks && errors.length > 0 && <Alert>{errors.join(" ")}</Alert>}
       {warnings.length > 0 && (showChecks || id) && (
@@ -458,7 +501,12 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
             <Field label="Reference" hint={id ? undefined : "Leave blank to issue the next number automatically"}>
               {input("reference", { readOnly: !!id, placeholder: "auto", className: `${inputClass} tabular-nums` })}
             </Field>
-            <Field label="Enquiry date *">{dateInput("enquiry_date")}</Field>
+            <Field
+              label="Enquiry date *"
+              hint={fromInbox?.date && form.enquiry_date === fromInbox.date ? `The day the first e-mail on this reference arrived, ${fmtDate(fromInbox.date)}` : undefined}
+            >
+              {dateInput("enquiry_date")}
+            </Field>
             <Field label="Quoted date">{dateInput("quoted_date")}</Field>
             <Field label="Confirmation date">{dateInput("confirmed_date")}</Field>
             <Field label="Closed as">
