@@ -3,6 +3,8 @@
 // Called every few minutes by pg_cron (supabase/email_sync_schedule.sql) with the random secret kept in
 // Vault as gmail_sync_secret, and on demand by an editor's "Check mail now" button (their own session
 // token). Deploy with --no-verify-jwt: this function checks both itself.
+// POST {"reclassify": true, "limit": 40} instead re-classifies stored e-mails that went to review as
+// "Not classified" (e.g. Claude had no credits), oldest first; repeat until it reports 0 candidates.
 //
 // Secrets (Supabase dashboard → Edge Functions → Secrets, or npx supabase secrets set NAME=value):
 //   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN   OAuth client + refresh token (gmail.readonly)
@@ -17,7 +19,14 @@
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by the platform.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.118.0";
 import { GmailApi } from "../_shared/email/gmail.ts";
-import { DEFAULT_OPTIONS, runSync, type SyncDb, type SyncStorage } from "../_shared/email/sync.ts";
+import {
+  DEFAULT_OPTIONS,
+  runReclassify,
+  runSync,
+  type SyncDb,
+  type SyncStorage,
+  type UnclassifiedEmail,
+} from "../_shared/email/sync.ts";
 import type { MatchContext } from "../_shared/email/types.ts";
 import { createClaudeClassifier, type Effort } from "./claude.ts";
 
@@ -107,6 +116,26 @@ function database(admin: SupabaseClient): SyncDb {
     async ingest(payload) {
       return unwrap(await admin.rpc("ingest_email", { p: payload }), "ingest_email") as { status: string; duplicate?: boolean };
     },
+    async unclassified(limit) {
+      return unwrap(
+        await admin
+          .from("email_messages")
+          .select("id, gmail_message_id, gmail_thread_id")
+          .eq("status", "review")
+          .is("enquiry_id", null)
+          .is("draft_id", null)
+          .like("note", "Not classified:%")
+          .order("received_at", { ascending: true })
+          .limit(limit),
+        "email_messages",
+      ) as UnclassifiedEmail[];
+    },
+    async reingest(emailId, payload) {
+      return unwrap(
+        await admin.rpc("reingest_email", { p_email_id: emailId, p: payload }),
+        "reingest_email",
+      ) as { status?: string; skipped?: boolean };
+    },
   };
 }
 
@@ -165,6 +194,12 @@ Deno.serve(async (req) => {
         : null,
       log: (m: string) => console.log(m),
     };
+    // POST {"reclassify": true, "limit": 40}: re-classify stored "Not classified" e-mails instead of syncing.
+    const body = (await req.json().catch(() => ({}))) as { reclassify?: unknown; limit?: unknown } | null;
+    if (body?.reclassify === true) {
+      return json(await runReclassify(deps, Number(body.limit ?? 40)));
+    }
+
     syncing = true; // from here on runSync records its own errors on the mailbox
     return json(await runSync(deps));
   } catch (e) {
