@@ -120,6 +120,31 @@
   }
 }
 
+/*
+ * Dashboard KPI strip: an accent for the top edge and bar, and a pale tint behind each figure.
+ * Static, because the strip reads them from inline styles, which Tailwind can't see.
+ */
+@theme static {
+  --color-kpi-enquiries: #2f6fde;
+  --color-kpi-enquiries-bg: #eef4ff;
+  --color-kpi-quoted: #6a4fd8;
+  --color-kpi-quoted-bg: #f3f0ff;
+  --color-kpi-confirmed: #1f8a55;
+  --color-kpi-confirmed-bg: #ecf8f1;
+  --color-kpi-conversion: #b26a00;
+  --color-kpi-conversion-bg: #fff6e8;
+  --color-kpi-sales: #13807a;
+  --color-kpi-sales-bg: #e9f7f6;
+  --color-kpi-profit: #5a7d12;
+  --color-kpi-profit-bg: #f2f8e6;
+  --color-kpi-margin: #c03a5b;
+  --color-kpi-margin-bg: #fdeff2;
+  --color-kpi-avgProfit: #1979a8;
+  --color-kpi-avgProfit-bg: #ebf7fd;
+  --color-up: #1f7a4d;
+  --color-down: #b42318;
+}
+
 /* Corrugated container sides on the team ship. */
 @utility stripes {
   background-image: repeating-linear-gradient(90deg, rgb(0 0 0 / 0.16) 0 2px, transparent 2px 7px);
