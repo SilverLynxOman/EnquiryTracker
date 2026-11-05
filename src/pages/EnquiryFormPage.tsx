@@ -19,6 +19,7 @@ import {
   saveEnquiry,
 } from "../lib/api";
 import { draftToPayload } from "../lib/emailDrafts";
+import { describeCommission, mentionsCommission, parseCommission } from "../lib/commission";
 import { errorMessage, fmtDate, fmtDateTime, fmtMoney, todayIso } from "../lib/format";
 import { parseQty, round2 } from "../lib/normalize";
 import {
@@ -566,7 +567,7 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
             >
               {input("subject", { placeholder: "1X40' SHANGHAI CHINA TO SOHAR OMAN" })}
             </Field>
-            <Field label="Remarks" hint="e.g. COMMISSION OMR 40/CNTR.">
+            <Field label="Remarks" hint={<CommissionHint remarks={form.remarks} units={form.units} />}>
               <textarea rows={2} className={inputClass} value={form.remarks} onChange={(e) => set("remarks", e.target.value)} />
             </Field>
             <Field label="Requirements" hint="Commodity, weight / volume, incoterm, cargo readiness, special handling" className="md:col-span-2">
@@ -594,6 +595,23 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
       {id && existing.data && <AuditHistory enquiry={existing.data} />}
     </form>
   );
+}
+
+/** What the database will read as commission from the remarks, shown while they are typed. */
+function CommissionHint({ remarks, units }: { remarks: string; units: string }) {
+  const found = parseCommission(remarks);
+  const n = Number(units) || null;
+  if (found) {
+    return (
+      <span className="text-ink-heading">
+        Commission: <span className="font-medium tabular-nums">{describeCommission(found, n)}</span>
+      </span>
+    );
+  }
+  if (mentionsCommission(remarks)) {
+    return <span className="text-await">Commission mentioned, but no amount found. Write it like COMMISSION OMR 40/CNTR.</span>;
+  }
+  return "Commission is read from here, e.g. COMMISSION OMR 40/CNTR.";
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -657,7 +675,10 @@ function AuditHistory({ enquiry }: { enquiry: EnquiryRow }) {
               {a.action === "delete" && <div>Deleted</div>}
               {a.action === "update" && a.changes && (
                 <ul className="mt-0.5 space-y-0.5">
-                  {Object.entries(a.changes as Record<string, { old: unknown; new: unknown; merged?: boolean }>).map(([field, c]) => (
+                  {Object.entries(a.changes as Record<string, { old: unknown; new: unknown; merged?: boolean }>)
+                    // Commission columns are read from the remarks, whose change is listed already.
+                    .filter(([field]) => !field.startsWith("commission_"))
+                    .map(([field, c]) => (
                     <li key={field}>
                       <span className="text-ink-muted">{FIELD_LABELS[field] ?? field}:</span> {showValue(field, c.old)} → {showValue(field, c.new)}
                       {c.merged && <span className="text-ink-muted"> (customers merged)</span>}
