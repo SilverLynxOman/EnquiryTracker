@@ -2,31 +2,19 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClie
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
-import { ConfidenceBadge, EmailView, Pill, shownName } from "../components/EmailView";
+import { ConfidenceBadge, EmailView, Pill } from "../components/EmailView";
 import { Icon } from "../components/icons";
-import { Alert, Button, Card, Empty, IconButton, Spinner, buttonClass, inputClass } from "../components/ui";
-import {
-  checkMailNow,
-  createEnquiryFromDraft,
-  dismissDraft,
-  draftFromEmail,
-  fetchDraftDuplicates,
-  fetchEmails,
-  fetchInboxCounts,
-  fetchNames,
-  fetchPendingDrafts,
-  linkEmail,
-  searchEmails,
-  mergeDraft,
-  setEmailIgnored,
-  suggestCustomers,
-} from "../lib/api";
-import { fmtDateLong } from "../lib/display";
+import { Alert, Button, Empty, IconButton, Spinner, inputClass } from "../components/ui";
+import { checkMailNow, draftFromEmail, fetchInboxCounts, linkEmail, searchEmails, setEmailIgnored } from "../lib/api";
 import { dayLabel, decodeEntities, muscatTime, rowSubject } from "../lib/conversations";
 import { Conversations } from "./inbox/Conversations";
-import { draftToPayload, muscatDate } from "../lib/emailDrafts";
+import { Ignored } from "./inbox/Ignored";
+import { NeedsReview } from "./inbox/NeedsReview";
+import { NewEnquiries } from "./inbox/NewEnquiries";
+import { WaitingForReference } from "./inbox/WaitingForReference";
+import { muscatDate } from "../lib/emailDrafts";
 import { errorMessage, fmtDateTime } from "../lib/format";
-import type { EmailListItem, EmailStatus, EnquiryDraft, InboxCounts, SyncResult } from "../lib/types";
+import type { EmailListItem, EmailStatus, InboxCounts, SyncResult } from "../lib/types";
 
 type Tab = "drafts" | "review" | "awaiting" | "linked" | "ignored";
 
@@ -56,7 +44,7 @@ const TABS: { key: Tab; label: string; count?: (c: InboxCounts) => number; hint:
     key: "awaiting",
     label: "Waiting for reference",
     count: (c) => c.awaiting,
-    hint: "E-mails citing an SL reference that is not in the register yet. They are linked automatically as soon as that enquiry is entered or imported.",
+    hint: "E-mails citing an SL reference that is not in the register yet, one conversation per reference. They are filed automatically as soon as that enquiry is entered or imported.",
   },
   {
     key: "linked",
@@ -66,16 +54,9 @@ const TABS: { key: Tab; label: string; count?: (c: InboxCounts) => number; hint:
   {
     key: "ignored",
     label: "Ignored",
-    hint: "Newsletters, invoices, notices and other mail that is not about an enquiry. Click a row to read it or move it back to review.",
+    hint: "Newsletters, operations mail and other e-mails that are not about an enquiry. Pick a day or search, and send anything that was set aside by mistake back to review.",
   },
 ];
-
-const STATUS_OF_TAB: Record<Exclude<Tab, "drafts">, EmailStatus> = {
-  review: "review",
-  awaiting: "awaiting_enquiry",
-  linked: "linked",
-  ignored: "ignored",
-};
 
 const refClass = "font-semibold tabular-nums text-primary hover:text-primary-hover hover:underline";
 
@@ -117,7 +98,9 @@ export default function InboxPage() {
 
   const current = TABS.find((t) => t.key === tab)!;
   // The conversations view fills the screen below the app header (3.5rem) and the page padding (2rem) on wide screens.
-  const fillScreen = tab === "linked" && params.get("view") !== "list";
+  // Every tab is a list beside a reading pane, except the paged "Every e-mail" view of Follow-ups and Ignored.
+  const fillScreen = !((tab === "linked" || tab === "ignored") && params.get("view") === "list");
+  const done = () => invalidateAll(queryClient);
   return (
     <div className={fillScreen ? "space-y-3 lg:flex lg:h-[calc(100vh-5.5rem)] lg:flex-col" : "space-y-3"}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -187,285 +170,25 @@ export default function InboxPage() {
       <p className="text-meta text-ink-muted">{current.hint}</p>
 
       {tab === "drafts" ? (
-        <DraftList mailbox={mailbox?.email} onNotice={setNotice} />
+        <NewEnquiries mailbox={mailbox?.email} onNotice={setNotice} onDone={done} />
+      ) : tab === "review" ? (
+        <NeedsReview mailbox={mailbox?.email} onNotice={setNotice} onDone={done} />
+      ) : tab === "awaiting" ? (
+        <WaitingForReference mailbox={mailbox?.email} onNotice={setNotice} onDone={done} />
       ) : tab === "linked" ? (
         <Conversations
           mailbox={mailbox?.email}
           onNotice={setNotice}
           listView={<EmailHistory status="linked" mailbox={mailbox?.email} onNotice={setNotice} />}
         />
-      ) : tab === "ignored" ? (
-        <EmailHistory key={tab} status={STATUS_OF_TAB[tab]} mailbox={mailbox?.email} onNotice={setNotice} />
       ) : (
-        <EmailList status={STATUS_OF_TAB[tab]} mailbox={mailbox?.email} onNotice={setNotice} />
+        <Ignored
+          mailbox={mailbox?.email}
+          onNotice={setNotice}
+          onDone={done}
+          listView={<EmailHistory status="ignored" mailbox={mailbox?.email} onNotice={setNotice} />}
+        />
       )}
-    </div>
-  );
-}
-
-// --- New enquiries --------------------------------------------------------------
-
-function DraftList({ mailbox, onNotice }: { mailbox?: string; onNotice: (n: ReactNode) => void }) {
-  const drafts = useQuery({ queryKey: ["inbox", "drafts"], queryFn: fetchPendingDrafts, refetchInterval: 60_000 });
-  if (drafts.isLoading) return <Spinner />;
-  if (drafts.error)
-    return (
-      <Alert action={<Button variant="secondary" size="sm" onClick={() => drafts.refetch()}>Try again</Button>}>
-        Loading the new enquiries failed. {errorMessage(drafts.error)}
-      </Alert>
-    );
-  if (!drafts.data?.length) return <Empty>No new enquiries waiting. New ones appear here a few minutes after they arrive.</Empty>;
-  return (
-    <div className="space-y-3">
-      {drafts.data.map((d, i) => (
-        <DraftCard key={d.id} draft={d} mailbox={mailbox} onNotice={onNotice} first={i === 0} />
-      ))}
-    </div>
-  );
-}
-
-function Detail({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
-  return (
-    <div className={wide ? "sm:col-span-2" : ""}>
-      <dt className="text-meta font-medium text-ink-heading">{label}</dt>
-      <dd className="text-body text-ink">{children || <span className="text-ink-muted">—</span>}</dd>
-    </div>
-  );
-}
-
-function DraftCard({ draft, mailbox, onNotice, first }: { draft: EnquiryDraft; mailbox?: string; onNotice: (n: ReactNode) => void; first: boolean }) {
-  const { canEdit } = useAuth();
-  const queryClient = useQueryClient();
-  const [customer, setCustomer] = useState(draft.customer_name ?? "");
-  const [showEmails, setShowEmails] = useState(false);
-  const f = draft.fields ?? {};
-  const firstEmail = draft.emails[0];
-
-  const customers = useQuery({ queryKey: ["names", "customers"], queryFn: () => fetchNames("customers"), staleTime: 300_000, enabled: canEdit });
-  const suggestions = useQuery({
-    queryKey: ["inbox", "suggest", draft.id],
-    queryFn: () => suggestCustomers(draft.customer_name, draft.contact_email),
-    staleTime: 300_000,
-  });
-  const duplicates = useQuery({ queryKey: ["inbox", "duplicates", draft.id], queryFn: () => fetchDraftDuplicates(draft.id) });
-
-  const done = (message: ReactNode) => {
-    onNotice(message);
-    invalidateAll(queryClient);
-  };
-  const create = useMutation({
-    mutationFn: () => createEnquiryFromDraft(draft.id, draftToPayload(draft, customer)),
-    onSuccess: (row) =>
-      done(
-        <>
-          Created{" "}
-          <Link to={`/enquiries/${row.id}`} className={refClass}>
-            {row.reference}
-          </Link>{" "}
-          for {shownName(customer)}. Reply to the customer with this reference in the subject, so follow-ups are filed automatically.
-        </>,
-      ),
-  });
-  const merge = useMutation({
-    mutationFn: (reference: string) => mergeDraft(draft.id, reference),
-    onSuccess: (r) =>
-      done(
-        <>
-          The e-mails were added to{" "}
-          <Link to={`/enquiries/${r.enquiry_id}`} className={refClass}>
-            {r.reference}
-          </Link>
-          .
-        </>,
-      ),
-  });
-  const dismiss = useMutation({
-    mutationFn: (reason: string | null) => dismissDraft(draft.id, reason),
-    onSuccess: () => done("Marked as not an enquiry. The e-mails are under “Ignored”."),
-  });
-  const busy = create.isPending || merge.isPending || dismiss.isPending;
-  const error = create.error ?? merge.error ?? dismiss.error;
-
-  const typed = customer.trim().toUpperCase();
-  const exact = suggestions.data?.find((s) => s.score >= 0.95 && s.name.toUpperCase() === typed);
-  const similar = (suggestions.data ?? []).filter((s) => s.name.toUpperCase() !== typed);
-
-  function askMerge(defaultRef = "") {
-    const ref = window.prompt("Add these e-mails to which enquiry? (reference, e.g. SL262759)", defaultRef);
-    if (ref?.trim()) merge.mutate(ref.trim());
-  }
-  function askDismiss() {
-    const reason = window.prompt("Not an enquiry. Reason (optional):", "");
-    if (reason !== null) dismiss.mutate(reason.trim() || null);
-  }
-
-  return (
-    <Card
-      title={
-        <span className="flex flex-wrap items-center gap-2">
-          <span>{shownName(draft.customer_name) || draft.contact_name || draft.contact_email || "Unknown sender"}</span>
-          <ConfidenceBadge value={draft.confidence} />
-          {draft.emails.length > 1 && <Pill className="bg-table-head text-ink-heading">{draft.emails.length} e-mails</Pill>}
-        </span>
-      }
-      actions={<span className="text-meta tabular-nums text-ink-muted">Received {fmtDateTime(draft.received_at)}</span>}
-    >
-      <div className="space-y-3">
-        {draft.summary && <p className="text-body text-ink">{draft.summary}</p>}
-        {firstEmail?.note && <Alert kind="info">{firstEmail.note}</Alert>}
-
-        <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2">
-            <dt className="mb-1 text-meta font-medium text-ink-heading">
-              <label htmlFor={`customer-${draft.id}`}>Customer *</label>
-            </dt>
-            <dd>
-              {canEdit ? (
-                <input
-                  id={`customer-${draft.id}`}
-                  className={inputClass}
-                  value={customer}
-                  onChange={(e) => setCustomer(e.target.value.toUpperCase())}
-                  list={`customers-${draft.id}`}
-                  placeholder="Customer name"
-                  autoComplete="off"
-                />
-              ) : (
-                <span className="text-body text-ink">{shownName(customer) || "—"}</span>
-              )}
-              <datalist id={`customers-${draft.id}`}>
-                {customers.data?.map((n) => <option key={n} value={n} />)}
-              </datalist>
-              <div className="mt-1 flex flex-wrap gap-x-2 text-meta text-ink-muted">
-                {exact ? (
-                  <span className="inline-flex items-center gap-1 text-confirmed">
-                    <Icon name="check" className="size-3.5" />
-                    Existing customer
-                  </span>
-                ) : typed ? (
-                  <span>New customer{similar.length ? ". Or did you mean:" : ""}</span>
-                ) : (
-                  <span className="text-lost">Enter the customer before creating the enquiry{similar.length ? ". Suggestions:" : ""}</span>
-                )}
-                {!exact &&
-                  similar.map((s) => (
-                    <button key={s.id} type="button" className="text-primary hover:underline" disabled={!canEdit} onClick={() => setCustomer(s.name)}>
-                      {shownName(s.name)}
-                    </button>
-                  ))}
-              </div>
-            </dd>
-          </div>
-          <Detail label="Contact">
-            {[draft.contact_name, draft.contact_designation].filter(Boolean).join(", ")}
-            {draft.contact_email && <div className="text-meta text-ink-muted">{draft.contact_email}</div>}
-            {draft.contact_phone && <div className="text-meta text-ink-muted">{draft.contact_phone}</div>}
-          </Detail>
-          <Detail label="Sales person">{shownName(draft.sales_person_name)}</Detail>
-          <Detail label="Route">{[f.pol, f.pod].some(Boolean) ? `${shownName(f.pol) || "?"} → ${shownName(f.pod) || "?"}` : null}</Detail>
-          <Detail label="Shipment">
-            {[f.qty_text, f.shipment_mode && f.shipment_mode !== f.qty_text ? f.shipment_mode : null, f.trade_type].filter(Boolean).join(" · ")}
-          </Detail>
-          <Detail label="Enquiry date">{fmtDateLong(f.enquiry_date)}</Detail>
-          <Detail label="Incoterm">{f.incoterm}</Detail>
-          <Detail label="Subject" wide>
-            {f.subject && (
-              <span title="The reference is added when the enquiry is created">
-                <span className="text-ink-muted">SL…</span> {f.subject}
-              </span>
-            )}
-          </Detail>
-          {draft.requirements && (
-            <Detail label="Requirements" wide>
-              <span className="whitespace-pre-wrap">{draft.requirements}</span>
-            </Detail>
-          )}
-        </dl>
-
-        {!!duplicates.data?.length && (
-          <Alert kind="warning">
-            <div className="mb-1 font-medium">This may already be in the register:</div>
-            <ul className="space-y-1">
-              {duplicates.data.map((d) => (
-                <li key={d.id} className="flex flex-wrap items-center gap-2">
-                  <Link to={`/enquiries/${d.id}`} className="font-semibold tabular-nums underline">
-                    {d.reference}
-                  </Link>
-                  <span>
-                    {fmtDateLong(d.enquiry_date)} · {d.subject ?? shownName(d.customer_name)}
-                    {d.same_route && " · same route"}
-                  </span>
-                  {canEdit && (
-                    <Button size="sm" variant="secondary" disabled={busy} onClick={() => askMerge(d.reference)}>
-                      Add e-mails to {d.reference}
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </Alert>
-        )}
-        {error && <Alert>{errorMessage(error)}</Alert>}
-
-        <div className="flex flex-wrap items-center gap-2">
-          {canEdit && (
-            <>
-              <Button
-                variant={first ? "primary" : "secondary"}
-                loading={create.isPending}
-                disabled={busy || !customer.trim()}
-                onClick={() => create.mutate()}
-                title="Create the enquiry with the details shown"
-              >
-                {!create.isPending && <Icon name="check" />}
-                {create.isPending ? "Creating…" : "Create enquiry"}
-              </Button>
-              <Link to={`/enquiries/new?draft=${draft.id}`} className={buttonClass("secondary")}>
-                <Icon name="edit" />
-                Review & edit
-              </Link>
-              <Button variant="secondary" disabled={busy} onClick={() => askMerge()}>
-                Add to existing enquiry…
-              </Button>
-              <Button variant="ghost" disabled={busy} onClick={askDismiss}>
-                Not an enquiry
-              </Button>
-            </>
-          )}
-          <Button variant="ghost" className="ml-auto" aria-expanded={showEmails} onClick={() => setShowEmails(!showEmails)}>
-            {showEmails ? "Hide e-mail" : `Show e-mail${draft.emails.length > 1 ? `s (${draft.emails.length})` : ""}`}
-          </Button>
-        </div>
-
-        {showEmails && (
-          <div className="space-y-2">
-            {draft.emails.map((m) => (
-              <EmailView key={m.id} email={m} mailbox={mailbox} showSummary={draft.emails.length > 1} />
-            ))}
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-}
-
-// --- Other tabs -----------------------------------------------------------------
-
-function EmailList({ status, mailbox, onNotice }: { status: EmailStatus; mailbox?: string; onNotice: (n: ReactNode) => void }) {
-  const emails = useQuery({ queryKey: ["inbox", "emails", status], queryFn: () => fetchEmails(status), refetchInterval: 60_000 });
-  if (emails.isLoading) return <Spinner />;
-  if (emails.error)
-    return (
-      <Alert action={<Button variant="secondary" size="sm" onClick={() => emails.refetch()}>Try again</Button>}>
-        Loading the e-mails failed. {errorMessage(emails.error)}
-      </Alert>
-    );
-  if (!emails.data?.length) return <Empty>Nothing here.</Empty>;
-  return (
-    <div className="space-y-3">
-      {emails.data.map((m) => (
-        <EmailCard key={m.id} email={m} mailbox={mailbox} onNotice={onNotice} />
-      ))}
     </div>
   );
 }
