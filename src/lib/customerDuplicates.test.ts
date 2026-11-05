@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_NOISE_WORDS,
   findDuplicatePairs,
   groupDuplicates,
   keepOrder,
   matchKey,
   pairKey,
+  portCountry,
+  portMatchKey,
+  portParts,
   trigramSimilarity,
   trigrams,
   TYPO_SCORE,
@@ -150,5 +154,64 @@ describe("keepOrder", () => {
   it("prefers more enquiries, then the longer name", () => {
     const sorted = [customer("1", "AL SABBAGH TRADING", 6), customer("2", "AL SABBAGH TRADING LLC", 6), customer("3", "AL SABBAGH", 18)].sort(keepOrder);
     expect(sorted.map((c) => c.id)).toEqual(["3", "2", "1"]);
+  });
+});
+
+describe("agents", () => {
+  const agentRules = { keyOf: (n: string) => matchKey(n, AGENT_NOISE_WORDS) };
+  it("ignores trade words such as Logistics, Freight and Cargo", () => {
+    expect(matchKey("BARRIO LOGISTICS", AGENT_NOISE_WORDS)).toBe("BARRIO");
+    expect(matchKey("SHENZHEN WORLD CARGO", AGENT_NOISE_WORDS)).toBe("SHENZHEN WORLD");
+    expect(matchKey("DASHING INTERNATIO", AGENT_NOISE_WORDS)).toBe("DASHING");
+    // Customers keep them: a trading company is not its logistics arm.
+    expect(matchKey("BARRIO LOGISTICS")).toBe("BARRIO LOGISTIC");
+  });
+
+  it("pairs agent spellings but not different agents of one city", () => {
+    const list = [
+      customer("1", "CONSOLE CLUB"),
+      customer("2", "CONSOL CLUB"),
+      customer("3", "LIFT"),
+      customer("4", "LIFT FREIGHT"),
+      customer("5", "SHENZHEN CARGO"),
+      customer("6", "SHENZHEN TRANS"),
+      customer("7", "ZEIGLER"),
+      customer("8", "ZIEGLER"),
+    ];
+    const found = findDuplicatePairs(list, new Set(), 0.75, agentRules).map((p) => pairKey(p.a, p.b));
+    expect(found).toEqual(expect.arrayContaining([pairKey("1", "2"), pairKey("3", "4"), pairKey("7", "8")]));
+    expect(found).not.toContain(pairKey("5", "6"));
+  });
+});
+
+describe("ports", () => {
+  it("splits the country off the place", () => {
+    expect(portParts("NHAVA-SHEVA INDIA")).toEqual({ place: "NHAVA SHEVA", country: "INDIA" });
+    expect(portParts("Durban South Africa")).toEqual({ place: "DURBAN", country: "SOUTH AFRICA" });
+    expect(portParts("HONG KONG CHINA")).toEqual({ place: "HONG KONG", country: "CHINA" });
+    expect(portParts("SOHAR")).toEqual({ place: "SOHAR", country: null });
+    expect(portParts("ITALY")).toEqual({ place: "ITALY", country: "ITALY" });
+  });
+
+  it("pairs a port with and without its country, punctuation and one-letter typos", () => {
+    const rules = { keyOf: portMatchKey, scopeOf: portCountry };
+    const list = [
+      customer("1", "SOHAR OMAN", 1627),
+      customer("2", "SOHAR", 3),
+      customer("3", "NHAVA-SHEVA INDIA"),
+      customer("4", "NHAVA SHEVA INDIA"),
+      customer("5", "AHMEDABAD INDIA"),
+      customer("6", "AHEMDABAD INDIA"),
+      customer("7", "TANJUNG INDONESIA"),
+      customer("8", "TANJUNG MALAYSIA"),
+      customer("9", "MUSCAT OMAN"),
+    ];
+    const pairs = findDuplicatePairs(list, new Set(), 0.75, rules);
+    const found = pairs.map((p) => pairKey(p.a, p.b));
+    expect(found).toEqual(expect.arrayContaining([pairKey("1", "2"), pairKey("3", "4"), pairKey("5", "6")]));
+    expect(pairs.find((p) => pairKey(p.a, p.b) === pairKey("1", "2"))?.score).toBe(1);
+    // Same place name in two countries: never the same port.
+    expect(found).not.toContain(pairKey("7", "8"));
+    expect(found.some((k) => k.includes("9"))).toBe(false);
   });
 });

@@ -179,6 +179,18 @@ Customer merge (`supabase/migrations/20261104215109_customer_merge.sql`):
 
 RPCs: `merge_customers(keep, merge[], name)` (admins) moves enquiries, contacts, e-mail drafts and former names to the kept customer, records the merged names as former names (`customer_aliases`), deletes the merged customers and can rename the kept one, all in one transaction. Moving an enquiry is not counted as an app edit, so imports can still update it, and its history reads "Customer: OLD → KEPT (customers merged)". `rename_customer` (editors) keeps the old name as a former name. `mark_customers_distinct` (editors). The duplicate finder itself runs in the browser (`src/lib/customerDuplicates.ts`).
 
+Agents and ports (`supabase/migrations/20261105083805_agents_and_ports.sql`, with `20261105085046_lock_port_trigger_function.sql`):
+
+| Table / view | Purpose |
+|---|---|
+| `agent_summary` (view), `agent_not_duplicates` | As for customers |
+| `ports`, `port_aliases` | Standard port names, and the spellings remembered for each |
+| `port_not_duplicates` | Spellings marked as different places |
+| `port_summary` (view) | Every spelling used as POL or POD (by name key), with counts as POL / POD |
+| `master_merges` | History of agent and port merges |
+
+RPCs: `merge_agents`, `rename_agent`, `mark_agents_distinct`, as for customers. `merge_ports(keys[], name)` (admins) makes one standard name for several spellings, rewrites POL / POD on the enquiries (not counted as an app edit) and remembers each spelling; with one key it renames a spelling. `mark_ports_distinct` (editors). The trigger `enquiries_apply_port_names` writes the standard name whenever a remembered spelling is saved, from the app, an import or an e-mail, and the import preview applies the same rule, so known spellings are not shown as changes.
+
 ---
 
 ## 4. Daily workflow in the app
@@ -289,9 +301,9 @@ Written 2026-11-04 (*Reports* menu). Migration `20261104180409_report_functions`
 ### Phase 5 — Data quality & follow-up (2 days) 🟡
 | Task | Detail |
 |---|---|
-| Master-data screens | ✅ Customers (2026-11-04): *Customers* page with the full list (counts, former names, search, sort), rename (the old name is remembered), and **merge duplicates**: moves enquiries, contacts and e-mail drafts, records the old names as aliases so future imports and e-mails map to the kept customer. Merging is for admins. ⬜ Agents and sales persons: same tools |
+| Master-data screens | ✅ Customers (2026-11-04): *Customers* page with the full list (counts, former names, search, sort), rename (the old name is remembered), and **merge duplicates**: moves enquiries, contacts and e-mail drafts, records the old names as aliases so future imports and e-mails map to the kept customer. Merging is for admins. ✅ Agents (2026-11-05): the same tools under *Masters → Agents*; trade words (Logistics, Freight, Cargo…) are ignored when comparing, so `BARRIO` / `BARRIO LOGISTICS` match. On the register: 22 groups, e.g. `CONSOL CLUB` / `CONSOLE CLUB`, `FRONT LINE` / `FRONTLINE`. ⬜ Sales persons: same tools if needed |
 | Duplicate finder | ✅ *Possible duplicates* tab, grouped. Names are compared without legal forms (LLC, CO., SAOC…), "&", punctuation, spaces and plural S, then by trigram similarity (the `pg_trgm` measure; "likely" = 0.75), plus one-letter typos in names of six letters or more. On the 2026 register: 164 groups, 407 customers, e.g. `SYNERGIES CASTING` / `SYNERGIES CASTINGS`, seven spellings of `ADVANCE OILFIELD TECHNOLOGY`. Untick a name that is a different company, or mark a group *Not the same*. Runs in the browser (under 0.1 s for 874 names): the same self-join in Postgres cannot use a trigram index and took 3–6 s |
-| Ports | Port master + normalisation (`NHAVA SHEVA` → `NHAVA-SHEVA INDIA`) |
+| Ports | ✅ *Masters → Ports* (2026-11-05): every spelling used as POL or POD with its counts; possible duplicates compare the place without the country (`SOHAR` / `SOHAR OMAN`) and never pair two countries (`TANJUNG INDONESIA` / `TANJUNG MALAYSIA`). Merging picks one standard name, rewrites the enquiries and remembers the other spellings: when one is typed or imported again it becomes the standard name. The enquiry form suggests port names. On the register: 25 groups among 271 spellings, e.g. `NHAVA-SHEVA INDIA` / `NHAVA SHEVA INDIA`, `AHMEDABAD` / `AHEMDABAD`, `KOLKATA` / `KOLKOTA`; mark `NANHAI` / `NINHAI` and `SHANXI` / `SHAANXI` as *Not the same* |
 | Follow-ups | ✅ *Follow-ups* page (2026-11-04): open enquiries waiting 14 days or more (`STALE_DAYS` in `src/lib/followUps.ts`), in tabs by age: quoted 14–30 days ago, 31–90 days, over 90 days, and never quoted. Search and a sales-person filter (a sales user sees their own first). *Confirm job* per row; tick rows, or *Select all* in a tab, and *Mark lost…* with one reason, then *Undo*. Migration `20261104223652_follow_ups`: `close_enquiries_as_lost` closes only enquiries that are still open and returns their ids; `reopen_enquiries` undoes it. Both run as the caller (editors only), and the change history records the closure. A confirmation entered later still makes the job confirmed. The dashboard links to the page with the count. Each quote shows when it was last chased and by whom; a sales person's row action is *Followed up* (logs today's follow-up, click again to undo), using the `follow_ups` table shared with The Window, so a follow-up logged on either page counts on both. On 2026-11-04: 85 + 285 + 1,061 stale quotes and 22 enquiries never quoted. ⬜ Optional daily reminder e-mail: needs a way to send mail (an e-mail service, or the Gmail send permission) |
 | Commission | Parse `COMMISSION OMR 40/CNTR.` into structured `commission_amount`, `commission_currency`, `commission_per_unit` |
 

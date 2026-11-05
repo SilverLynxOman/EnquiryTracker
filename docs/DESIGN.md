@@ -90,7 +90,7 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 ## Components
 
 ### Navigation
-- **Left:** logo and application name, then Dashboard, Register, Follow-ups, Reports, Inbox and Customers, each with an icon. The active item has 600 weight, violet text and a 2 px violet underline.
+- **Left:** logo and application name, then Dashboard, Register, Follow-ups, Reports, Inbox and Masters, each with an icon. The active item has 600 weight, violet text and a 2 px violet underline.
 - **Right:** Import (editors only), Export (on the Register page; it exports the filtered view), New enquiry (the one filled primary button), then the avatar menu (account, *Users and roles* for admins, sign out).
 - **Narrow screens:** labels collapse to icons, and their accessible names stay. Navigation labels show from 1024 px, Import and Export labels from 1280 px. Below 640 px the bar has a 16 px gutter, and on the narrowest phones the navigation icons scroll inside the bar instead of widening the page.
 
@@ -150,11 +150,14 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 - **Layout:** title bar, body, then a footer with Cancel (outline) and the one primary action on the right. Errors appear inside the dialog, above the footer.
 - **Use for:** decisions that need input or confirmation before a change that is hard to undo (merging customers, renaming). Not for information that could sit on the page.
 
-### Customers page
-- **Tabs:** *Possible duplicates* (default) and *All customers*, styled like the status tabs, with counts under the search.
+### Masters pages (customers, agents, ports)
+- **One page, three lists:** *Masters* in the navigation opens Customers, Agents and Ports tabs (like the Reports tabs). Everything that differs per list (labels, matching rules, the extra column, who may rename) is in `src/pages/masters/kinds.tsx`; the page, tables and dialogs are shared.
+- **Tabs:** *Possible duplicates* (default) and *All customers* / *agents* / *ports*, styled like the status tabs, with counts under the search.
 - **Duplicate groups:** one table. Each group is a row group whose header says why the names match ("same name apart from punctuation or legal form", "similar spelling") and holds *Not the same* (ghost) and *Merge…* (outline). Every name starts ticked; unticking one turns the button into "Merge 2 ticked…".
-- **Merge dialog:** choose the customer to keep (most enquiries by default), optionally correct its name, and read what moves where before confirming.
-- **Counts link to the register**, searched for that customer over all dates.
+- **Merge dialog:** choose the one to keep (most enquiries by default), optionally correct its name, and read what moves where before confirming. For ports the wording is *Spelling to keep* and *Standard name*, and the count includes the kept spelling's enquiries when the standard name changes it.
+- **Extra column:** Contacts for customers, POL / POD use for ports.
+- **Ports are admin-only to rename**, because renaming rewrites enquiries; customers and agents can be renamed by editors.
+- **Counts link to the register**, searched for that name over all dates.
 
 ### Follow-ups page
 - **Tabs by age:** quoted 14–30 days ago (default), 31–90 days, over 90 days, not quoted. Counts follow the search and sales-person filter, like the status tabs.
