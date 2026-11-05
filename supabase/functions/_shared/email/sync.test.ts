@@ -396,3 +396,63 @@ describe("runReclassifyBatch", () => {
     expect(b.state.submitted).toEqual([]);
   });
 });
+
+describe("runReclassifyBatch with Gmail rate limits", () => {
+  it("keeps the batch open and retries later when Gmail is rate limited, instead of losing the answer", async () => {
+    const h = harness([gmailMessage({ id: "a", threadId: "t1" }), gmailMessage({ id: "c", threadId: "t2" })], {
+      context: () => ({ already_ingested: true }),
+      classify: async () => {
+        throw new Error("live classifier called");
+      },
+    });
+    const getMessage = h.deps.gmail.getMessage;
+    h.deps.gmail.getMessage = async (id) => {
+      if (id === "c") throw new Error("Gmail /messages/c failed (403): Quota exceeded for quota metric 'Total Query Cost'");
+      return getMessage(id);
+    };
+    const finished: string[] = [];
+    const stats = await runReclassifyBatch(
+      h.deps,
+      {
+        client: {
+          async submit() {
+            return "unused";
+          },
+          async isEnded() {
+            return true;
+          },
+          async results() {
+            return new Map([
+              ["row-a", { answer: aiAnswer() }],
+              ["row-c", { answer: aiAnswer() }],
+            ]);
+          },
+        },
+        db: {
+          async pendingBatch() {
+            return {
+              id: "b1",
+              batch_id: "msgbatch_1",
+              items: [
+                { id: "row-a", gmail_message_id: "a", gmail_thread_id: "t1" },
+                { id: "row-c", gmail_message_id: "c", gmail_thread_id: "t2" },
+              ],
+            };
+          },
+          async saveBatch() {},
+          async finishBatch(id) {
+            finished.push(id);
+          },
+          async stillUnclassified(ids) {
+            return new Set(ids);
+          },
+        },
+      },
+      200,
+    );
+    expect(h.reingested.map((r) => r.emailId)).toEqual(["row-a"]);
+    expect(stats).toMatchObject({ state: "collecting", processed: 1, deferred: 1, errors: 0 });
+    expect(stats.error_messages[0]).toMatch(/^c: will retry: Gmail/);
+    expect(finished).toEqual([]);
+  });
+});
