@@ -1,3 +1,4 @@
+import { addDays } from "./format";
 import { supabase } from "./supabase";
 import type {
   AuditEntry,
@@ -606,6 +607,56 @@ export async function fetchEmails(status: EmailStatus, limit = 100): Promise<Ema
       .order("received_at", { ascending: false })
       .limit(limit),
   );
+}
+
+export interface EmailSearch {
+  status: EmailStatus;
+  /** Free text: subject, sender, preview text, or an SL reference. */
+  q?: string;
+  sender?: "external" | "staff" | "";
+  /** Oman calendar dates (YYYY-MM-DD), both inclusive. */
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}
+
+/** One page of e-mails with a given status, newest first, plus how many match in total (the whole history, no cap). */
+export async function searchEmails(s: EmailSearch): Promise<{ rows: EmailListItem[]; total: number; outOfRange?: boolean }> {
+  let query = supabase
+    .from("email_messages")
+    .select(
+      `${EMAIL_COLUMNS}, enquiry:enquiries!email_messages_enquiry_id_fkey(id, reference), ` +
+        "suggested:enquiries!email_messages_suggested_enquiry_id_fkey(id, reference)",
+      { count: "exact" },
+    )
+    .eq("status", s.status);
+
+  if (s.sender) query = query.eq("sender_type", s.sender);
+  if (s.from) query = query.gte("received_at", `${s.from}T00:00:00+04:00`);
+  if (s.to) query = query.lt("received_at", `${addDays(s.to, 1)}T00:00:00+04:00`);
+
+  // PostgREST's or() syntax reserves , ( ) and the wildcard characters.
+  const term = (s.q ?? "").replace(/[,()*%\\:"]/g, " ").trim();
+  if (term) {
+    const like = `*${term}*`;
+    const parts = [`subject.ilike.${like}`, `from_email.ilike.${like}`, `from_name.ilike.${like}`, `snippet.ilike.${like}`];
+    if (/^SL\s*\d{4,}$/i.test(term)) {
+      const ref = term.replace(/\s+/g, "").toUpperCase();
+      parts.push(`sl_refs.cs.{${ref}}`);
+      // Replies filed by conversation need not quote the reference, so also match the enquiry it was filed to.
+      const hit = unwrap<{ id: string }[]>(await supabase.from("enquiries").select("id").eq("reference", ref).limit(1));
+      if (hit[0]) parts.push(`enquiry_id.eq.${hit[0].id}`);
+    }
+    query = query.or(parts.join(","));
+  }
+
+  const start = s.page * s.pageSize;
+  const { data, error, count } = await query.order("received_at", { ascending: false }).range(start, start + s.pageSize - 1);
+  // A page past the end (an old link, or mail moved away meanwhile): go back to the first page.
+  if (error?.code === "PGRST103" && s.page > 0) return searchEmails({ ...s, page: 0 }).then((r) => ({ ...r, outOfRange: true }));
+  if (error) throw error;
+  return { rows: (data ?? []) as unknown as EmailListItem[], total: count ?? 0 };
 }
 
 export async function fetchEnquiryEmails(enquiryId: string): Promise<EmailMessage[]> {

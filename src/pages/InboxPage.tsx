@@ -1,10 +1,10 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { ConfidenceBadge, EmailView, Pill, shownName } from "../components/EmailView";
 import { Icon } from "../components/icons";
-import { Alert, Button, Card, Empty, Spinner, buttonClass, inputClass } from "../components/ui";
+import { Alert, Button, Card, Empty, IconButton, Spinner, buttonClass, inputClass } from "../components/ui";
 import {
   checkMailNow,
   createEnquiryFromDraft,
@@ -16,13 +16,14 @@ import {
   fetchNames,
   fetchPendingDrafts,
   linkEmail,
+  searchEmails,
   mergeDraft,
   setEmailIgnored,
   suggestCustomers,
 } from "../lib/api";
 import { fmtDateLong } from "../lib/display";
-import { draftToPayload } from "../lib/emailDrafts";
-import { errorMessage, fmtDateTime } from "../lib/format";
+import { draftToPayload, muscatDate } from "../lib/emailDrafts";
+import { addDays, errorMessage, fmtDateTime } from "../lib/format";
 import type { EmailListItem, EmailStatus, EnquiryDraft, InboxCounts, SyncResult } from "../lib/types";
 
 type Tab = "drafts" | "review" | "awaiting" | "linked" | "ignored";
@@ -46,8 +47,16 @@ const TABS: { key: Tab; label: string; count?: (c: InboxCounts) => number; hint:
     count: (c) => c.awaiting,
     hint: "E-mails citing an SL reference that is not in the register yet. They are linked automatically as soon as that enquiry is entered or imported.",
   },
-  { key: "linked", label: "Recent follow-ups", hint: "The latest e-mails added to existing enquiries." },
-  { key: "ignored", label: "Ignored", hint: "Newsletters, invoices, notices and other mail that is not about an enquiry." },
+  {
+    key: "linked",
+    label: "Follow-up e-mails",
+    hint: "Every e-mail added to an existing enquiry, newest first. Search or pick dates to find older ones; click a row to read it.",
+  },
+  {
+    key: "ignored",
+    label: "Ignored",
+    hint: "Newsletters, invoices, notices and other mail that is not about an enquiry. Click a row to read it or move it back to review.",
+  },
 ];
 
 const STATUS_OF_TAB: Record<Exclude<Tab, "drafts">, EmailStatus> = {
@@ -166,6 +175,8 @@ export default function InboxPage() {
 
       {tab === "drafts" ? (
         <DraftList mailbox={mailbox?.email} onNotice={setNotice} />
+      ) : tab === "linked" || tab === "ignored" ? (
+        <EmailHistory key={tab} status={STATUS_OF_TAB[tab]} mailbox={mailbox?.email} onNotice={setNotice} />
       ) : (
         <EmailList status={STATUS_OF_TAB[tab]} mailbox={mailbox?.email} onNotice={setNotice} />
       )}
@@ -433,11 +444,282 @@ function EmailList({ status, mailbox, onNotice }: { status: EmailStatus; mailbox
   if (!emails.data?.length) return <Empty>Nothing here.</Empty>;
   return (
     <div className="space-y-3">
-      {(status === "linked" || status === "ignored") && emails.data.length >= 100 && <p className="text-meta text-ink-muted">Showing the latest 100.</p>}
       {emails.data.map((m) => (
         <EmailCard key={m.id} email={m} mailbox={mailbox} onNotice={onNotice} />
       ))}
     </div>
+  );
+}
+
+// --- Follow-ups and Ignored: the full history as a compact, searchable list -------
+
+const PAGE_SIZE = 50;
+
+/** Oman wall-clock time (UTC+4) of a timestamp, as HH:MM. */
+function muscatTime(ts: string): string {
+  return new Date(new Date(ts).getTime() + 4 * 3600_000).toISOString().slice(11, 16);
+}
+
+function dayLabel(day: string, today: string): string {
+  if (day === today) return "Today";
+  if (day === addDays(today, -1)) return "Yesterday";
+  const weekday = new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" });
+  return `${weekday} ${fmtDateLong(day)}`;
+}
+
+/** Gmail snippets arrive HTML-escaped ("&amp;", "&#39;"). */
+function decodeEntities(s: string): string {
+  if (!s.includes("&")) return s;
+  const el = document.createElement("textarea");
+  el.innerHTML = s;
+  return el.value;
+}
+
+/** The subject for a one-line row: reply/forward prefixes and the reference (shown in its own column) removed. */
+function rowSubject(subject: string | null, reference?: string | null): string {
+  let s = (subject ?? "").replace(/^\s*((re|fw|fwd|aw|r|tr|sv|回复|答复|转发)\s*[:：]\s*)+/i, "");
+  if (reference) s = s.replace(new RegExp(`^\\s*${reference}\\s*(//|[-:|])?\\s*`, "i"), "");
+  return s.trim() || (subject ?? "").trim();
+}
+
+function EmailHistory({ status, mailbox, onNotice }: { status: EmailStatus; mailbox?: string; onNotice: (n: ReactNode) => void }) {
+  const [params, setParams] = useSearchParams();
+  const q = params.get("q") ?? "";
+  const sender = (params.get("sender") ?? "") as "" | "external" | "staff";
+  const from = params.get("from") ?? "";
+  const to = params.get("to") ?? "";
+  const page = Math.max(0, Number(params.get("page") ?? 1) - 1) || 0;
+  const [typed, setTyped] = useState(q);
+  const [open, setOpen] = useState<string | null>(null);
+
+  function update(changes: Record<string, string>, keepPage = false) {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(changes)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    if (!keepPage) next.delete("page");
+    setParams(next, { replace: true });
+    setOpen(null);
+  }
+
+  // Search as you type, once typing pauses.
+  useEffect(() => {
+    if (typed.trim() === q) return;
+    const t = setTimeout(() => update({ q: typed.trim() }), 350);
+    return () => clearTimeout(t);
+  }, [typed]);
+
+  const search = { status, q, sender, from, to, page, pageSize: PAGE_SIZE };
+  const emails = useQuery({
+    queryKey: ["inbox", "history", search],
+    queryFn: () => searchEmails(search),
+    placeholderData: keepPreviousData,
+    refetchInterval: page === 0 ? 60_000 : false,
+  });
+
+  // The server fell back to page 1: make the address say so too.
+  useEffect(() => {
+    if (emails.data?.outOfRange) update({}, false);
+  }, [emails.data?.outOfRange]);
+
+  const total = emails.data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const filtered = Boolean(q || sender || from || to);
+  const today = muscatDate(new Date().toISOString());
+
+  const groups: { day: string; rows: EmailListItem[] }[] = [];
+  for (const m of emails.data?.rows ?? []) {
+    const day = muscatDate(m.received_at);
+    if (groups.at(-1)?.day !== day) groups.push({ day, rows: [] });
+    groups.at(-1)!.rows.push(m);
+  }
+
+  const pager = (
+    <div className="flex items-center gap-1">
+      <IconButton icon="chevronLeft" label="Newer e-mails" disabled={page === 0} onClick={() => update({ page: page > 1 ? String(page) : "" }, true)} />
+      <span className="min-w-24 text-center text-meta tabular-nums text-ink-heading">
+        Page {page + 1} of {pages.toLocaleString("en-GB")}
+      </span>
+      <IconButton icon="chevronRight" label="Older e-mails" disabled={page + 1 >= pages} onClick={() => update({ page: String(page + 2) }, true)} />
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="relative min-w-60 flex-1 sm:max-w-md">
+          <span className="sr-only">Search e-mails</span>
+          <Icon name="search" className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-muted" />
+          <input
+            type="search"
+            className={`${inputClass} pl-8`}
+            placeholder="Search subject, sender or SL reference"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+        </label>
+        <div role="group" aria-label="Sender" className="inline-flex rounded-control ring-1 ring-inset ring-control">
+          {(
+            [
+              ["", "All"],
+              ["external", "External"],
+              ["staff", "Colleagues"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={label}
+              type="button"
+              aria-pressed={sender === value}
+              onClick={() => update({ sender: value })}
+              className={`h-9 px-3 text-control font-medium first:rounded-l-control last:rounded-r-control ${
+                sender === value ? "bg-selected text-primary" : "text-ink-heading hover:bg-row-hover"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-1.5 text-meta text-ink-heading">
+          From
+          <input type="date" className={`${inputClass} w-36`} value={from} max={to || undefined} onChange={(e) => update({ from: e.target.value })} />
+        </label>
+        <label className="flex items-center gap-1.5 text-meta text-ink-heading">
+          To
+          <input type="date" className={`${inputClass} w-36`} value={to} min={from || undefined} onChange={(e) => update({ to: e.target.value })} />
+        </label>
+        {filtered && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setTyped("");
+              update({ q: "", sender: "", from: "", to: "" });
+            }}
+          >
+            <Icon name="close" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-meta text-ink-muted" aria-live="polite">
+          {emails.isLoading
+            ? "Loading…"
+            : `${total.toLocaleString("en-GB")} e-mail${total === 1 ? "" : "s"}${filtered ? " match" : ""}${
+                total > PAGE_SIZE ? ` · showing ${(page * PAGE_SIZE + 1).toLocaleString("en-GB")}–${Math.min(total, (page + 1) * PAGE_SIZE).toLocaleString("en-GB")}` : ""
+              }`}
+          {emails.isFetching && !emails.isLoading && <span className="ml-2">Updating…</span>}
+        </p>
+        {total > PAGE_SIZE && pager}
+      </div>
+
+      {emails.error ? (
+        <Alert action={<Button variant="secondary" size="sm" onClick={() => emails.refetch()}>Try again</Button>}>
+          Loading the e-mails failed. {errorMessage(emails.error)}
+        </Alert>
+      ) : emails.isLoading ? (
+        <Spinner />
+      ) : !groups.length ? (
+        <Empty>{filtered ? "No e-mails match. Try fewer words or a wider date range." : "Nothing here yet."}</Empty>
+      ) : (
+        <div className={`overflow-hidden rounded-panel border border-line bg-surface ${emails.isPlaceholderData ? "opacity-60" : ""}`}>
+          {groups.map((g) => (
+            <section key={g.day} aria-label={dayLabel(g.day, today)}>
+              <h3 className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-table-head px-3 py-1.5 text-meta font-semibold text-ink-heading">
+                {dayLabel(g.day, today)}
+                <span className="font-normal text-ink-muted tabular-nums">{g.rows.length}</span>
+              </h3>
+              <ul className="divide-y divide-line">
+                {g.rows.map((m) => (
+                  <HistoryRow
+                    key={m.id}
+                    email={m}
+                    open={open === m.id}
+                    onToggle={() => setOpen(open === m.id ? null : m.id)}
+                    mailbox={mailbox}
+                    onNotice={onNotice}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {total > PAGE_SIZE && !emails.isLoading && <div className="flex justify-end">{pager}</div>}
+    </div>
+  );
+}
+
+function HistoryRow({
+  email,
+  open,
+  onToggle,
+  mailbox,
+  onNotice,
+}: {
+  email: EmailListItem;
+  open: boolean;
+  onToggle: () => void;
+  mailbox?: string;
+  onNotice: (n: ReactNode) => void;
+}) {
+  const preview = decodeEntities(email.summary || email.snippet || "").replace(/\s+/g, " ").trim();
+  const subject = rowSubject(email.subject, email.enquiry?.reference);
+  const files = email.attachments.length;
+  return (
+    <li className={open ? "bg-selected/40" : ""}>
+      <div className="flex items-center gap-3 px-3 py-2 hover:bg-row-hover">
+        <span className="w-11 shrink-0 text-meta tabular-nums text-ink-muted">{muscatTime(email.received_at)}</span>
+        <span className="w-24 shrink-0">
+          {email.enquiry ? (
+            <Link to={`/enquiries/${email.enquiry.id}`} className={`${refClass} text-meta`}>
+              {email.enquiry.reference}
+            </Link>
+          ) : (
+            <span className="text-meta text-ink-muted">—</span>
+          )}
+        </span>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-control text-left focus-visible:outline-2 focus-visible:outline-primary"
+        >
+          <span className="flex w-44 shrink-0 items-center gap-1.5 truncate max-md:hidden">
+            {email.sender_type !== "external" && (
+              <span
+                className="size-1.5 shrink-0 rounded-full bg-primary"
+                title={email.sender_type === "staff" ? "Colleague" : "Pricing mailbox"}
+                aria-label={email.sender_type === "staff" ? "Colleague" : "Pricing mailbox"}
+              />
+            )}
+            <span className={`truncate text-body ${email.sender_type === "external" ? "font-semibold text-ink" : "text-ink-heading"}`}>
+              {email.from_name || email.from_email || "Unknown sender"}
+            </span>
+          </span>
+          <span className="min-w-0 flex-1 truncate text-body">
+            <span className="text-ink" title={email.subject ?? undefined}>
+              {subject || "(no subject)"}
+            </span>
+            {preview && <span className="text-ink-muted"> — {preview}</span>}
+          </span>
+          {files > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-meta tabular-nums text-ink-muted" title={`${files} attachment${files === 1 ? "" : "s"}`}>
+              <Icon name="paperclip" className="size-3.5" />
+              {files > 1 && files}
+            </span>
+          )}
+          <Icon name={open ? "chevronUp" : "chevronDown"} className="size-4 shrink-0 text-ink-muted" />
+        </button>
+      </div>
+      {open && (
+        <div className="border-t border-line bg-page px-3 py-3">
+          <EmailCard email={email} mailbox={mailbox} onNotice={onNotice} />
+        </div>
+      )}
+    </li>
   );
 }
 
