@@ -1,4 +1,5 @@
 import { addDays } from "./format";
+import type { ActivityRow } from "./masterActivity";
 import { supabase } from "./supabase";
 import type {
   AuditEntry,
@@ -193,6 +194,19 @@ export async function mergeAgents(keep: string, merge: string[], name: string | 
 
 export async function renameAgent(id: string, name: string): Promise<void> {
   unwrap(await supabase.rpc("rename_agent", { p_id: id, p_name: name }));
+}
+
+/** Every enquiry, reduced to what the master lists' trends, lanes and recent lists use. */
+export async function fetchMasterActivity(): Promise<ActivityRow[]> {
+  type Raw = Omit<ActivityRow, "sales_person"> & { sales_person: { name: string } | null };
+  const rows = await fetchAllPages<Raw>((from, to) =>
+    supabase
+      .from("enquiries")
+      .select("id, reference, enquiry_date, status, customer_id, agent_id, pol, pod, sales_person:sales_persons(name)")
+      .order("id")
+      .range(from, to),
+  );
+  return rows.map((r) => ({ ...r, sales_person: r.sales_person?.name ?? null }));
 }
 
 /** Every port spelling used as POL or POD, with counts (id is the spelling's name key). */
