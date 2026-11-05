@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupByEnquiry, modeGroup } from "./conversations";
+import { groupByEnquiry, modeGroup, weekDays } from "./conversations";
 import type { EmailListItem } from "./types";
 
 function mail(id: string, ref: string | null, at: string, from: string, files = 0): EmailListItem {
@@ -32,6 +32,30 @@ describe("groupByEnquiry", () => {
     expect(sl1.latest.id).toBe("3");
     expect(sl1.people).toEqual(["Ashwin", "Robert"]);
     expect(sl1.attachments).toBe(3);
+  });
+});
+
+describe("weekDays", () => {
+  const today = "2026-11-05"; // a Thursday
+
+  it("shows the last seven days, ending today, while the selection is among them", () => {
+    expect(weekDays(today, today)).toEqual(["2026-10-30", "2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"]);
+    expect(weekDays("2026-10-30", today).at(-1)).toBe(today);
+  });
+
+  it("shows an older day's Saturday-to-Friday week", () => {
+    const days = weekDays("2026-10-14", today); // a Wednesday
+    expect(days[0]).toBe("2026-10-10"); // Saturday
+    expect(days.at(-1)).toBe("2026-10-16"); // Friday
+    expect(days).toContain("2026-10-14");
+  });
+
+  it("never runs past today and always contains the selected day", () => {
+    for (const d of ["2026-10-29", "2026-10-25", "2026-10-24"]) {
+      const days = weekDays(d, today);
+      expect(days.at(-1)! <= today).toBe(true);
+      expect(days).toContain(d);
+    }
   });
 });
 

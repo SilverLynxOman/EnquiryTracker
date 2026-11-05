@@ -1,11 +1,11 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthProvider";
 import { AttachmentLink, shownName } from "../../components/EmailView";
 import { Icon } from "../../components/icons";
 import { Alert, Button, Empty, IconButton, Spinner, StatusBadge, buttonClass, inputClass } from "../../components/ui";
-import { fetchEnquiriesByIds, fetchEnquiryEmails, fetchFollowUpHistory, linkEmail, logFollowUp, searchEmails, undoFollowUp } from "../../lib/api";
+import { countEmailsByDay, fetchEnquiriesByIds, fetchEnquiryEmails, fetchFollowUpHistory, linkEmail, logFollowUp, searchEmails, undoFollowUp } from "../../lib/api";
 import {
   dayLabel,
   decodeEntities,
@@ -16,6 +16,7 @@ import {
   senderName,
   type Conversation,
   type ModeFilter,
+  weekDays,
 } from "../../lib/conversations";
 import { initials, shipmentLabel, shortPort, TRADE_LABELS } from "../../lib/display";
 import { gmailThreadUrl, muscatDate, splitBody } from "../../lib/emailDrafts";
@@ -82,6 +83,93 @@ function route(e: EnquiryRow | undefined): string {
   const r = from || to ? `${from || "?"} → ${to || "?"}` : (e.subject ?? "");
   const what = shipmentLabel(e);
   return what ? `${r} · ${what}` : r;
+}
+
+/** Seven day buttons with each day's e-mail count, a week back or forward, and a calendar for older dates. */
+function WeekStrip({ day, today, sender, onPick }: { day: string; today: string; sender: "" | "external" | "staff"; onPick: (day: string) => void }) {
+  const days = weekDays(day, today);
+  const counts = useQuery({
+    queryKey: ["inbox", "day-counts", days[0], sender],
+    queryFn: () => countEmailsByDay("linked", days, sender),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    refetchInterval: days.includes(today) ? 60_000 : false,
+  });
+  const dateRef = useRef<HTMLInputElement>(null);
+  const first = new Date(`${days[0]}T00:00:00Z`);
+  const last = new Date(`${days.at(-1)}T00:00:00Z`);
+  const month = (d: Date, year: boolean) => d.toLocaleDateString("en-GB", { month: "short", year: year ? "numeric" : undefined, timeZone: "UTC" });
+  const span = first.getUTCMonth() === last.getUTCMonth() ? month(last, true) : `${month(first, false)} – ${month(last, true)}`;
+
+  function openCalendar() {
+    const input = dateRef.current;
+    if (!input) return;
+    try {
+      input.showPicker();
+    } catch {
+      input.focus();
+    }
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+        <span>{span}</span>
+        {day !== today && (
+          <button type="button" className="font-semibold text-primary normal-case hover:underline" onClick={() => onPick(today)}>
+            Back to today
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-1">
+        <IconButton icon="chevronLeft" label="Previous week" onClick={() => onPick(addDays(day, -7))} />
+        <div role="group" aria-label="Day" className="grid min-w-0 flex-1 grid-cols-7 gap-1">
+          {days.map((d) => {
+            const on = d === day;
+            const n = counts.data?.[d];
+            const weekday = d === today ? "Today" : new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" });
+            return (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={on}
+                aria-label={`${dayLabel(d, today)}: ${n ?? "counting"} e-mails`}
+                onClick={() => onPick(d)}
+                className={`flex min-w-0 flex-col items-center rounded-control py-1 leading-tight transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-primary ${
+                  on ? "bg-lane-mail text-white shadow-sm" : "text-ink hover:bg-row-hover"
+                }`}
+              >
+                <span className={`truncate text-[11px] font-medium ${on ? "text-white" : "text-ink-muted"}`}>{weekday}</span>
+                <span className="text-body font-bold tabular-nums">{Number(d.slice(8))}</span>
+                <span className={`text-[11px] tabular-nums ${on ? "font-semibold text-white" : n ? "font-semibold text-lane-mail" : "text-ink-muted"}`}>
+                  {n == null ? "·" : n}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <IconButton
+          icon="chevronRight"
+          label="Next week"
+          disabled={day >= today}
+          onClick={() => onPick(addDays(day, 7) > today ? today : addDays(day, 7))}
+        />
+        <span className="relative">
+          <IconButton icon="calendar" label="Pick a date" onClick={openCalendar} />
+          <input
+            ref={dateRef}
+            type="date"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="pointer-events-none absolute right-0 bottom-0 size-px opacity-0"
+            value={day}
+            max={today}
+            onChange={(e) => e.target.value && onPick(e.target.value)}
+          />
+        </span>
+      </div>
+    </div>
+  );
 }
 
 /** Follow-up e-mails, one row per enquiry, the selected conversation open beside the list. */
@@ -176,12 +264,11 @@ export function Conversations({ mailbox, onNotice, listView }: { mailbox?: strin
     );
 
   return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+    // From lg up the view fills the rest of the screen (InboxPage gives it the height) and the list and the
+    // conversation each scroll on their own; on a phone the page scrolls as usual.
+    <div className="flex flex-col gap-4 lg:min-h-0 lg:flex-1 lg:flex-row">
       {/* Conversation list */}
-      <section
-        aria-label="Conversations"
-        className="flex min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-surface lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:w-[44%] lg:shrink-0"
-      >
+      <section aria-label="Conversations" className="flex min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-surface lg:w-[42%] lg:shrink-0">
         <div className="space-y-3 border-b border-line p-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="min-w-0 flex-1">
@@ -240,25 +327,7 @@ export function Conversations({ mailbox, onNotice, listView }: { mailbox?: strin
             )}
           </div>
 
-          {!q && (
-            <div className="flex items-center gap-1">
-              <IconButton icon="chevronLeft" label="Previous day" onClick={() => update({ day: addDays(day, -1), e: "" })} />
-              <input
-                type="date"
-                aria-label="Day"
-                className={`${inputClass} w-40`}
-                value={day}
-                max={today}
-                onChange={(e) => update({ day: e.target.value && e.target.value !== today ? e.target.value : "", e: "" })}
-              />
-              <IconButton icon="chevronRight" label="Next day" disabled={day >= today} onClick={() => update({ day: addDays(day, 1) >= today ? "" : addDays(day, 1), e: "" })} />
-              {day !== today && (
-                <Button variant="ghost" size="sm" onClick={() => update({ day: "", e: "" })}>
-                  Today
-                </Button>
-              )}
-            </div>
-          )}
+          {!q && <WeekStrip day={day} today={today} sender={sender} onPick={(d) => update({ day: d >= today ? "" : d, e: "" })} />}
         </div>
 
         {emails.error ? (
@@ -288,7 +357,7 @@ export function Conversations({ mailbox, onNotice, listView }: { mailbox?: strin
       </section>
 
       {/* Reading pane */}
-      <div ref={paneRef} className="min-w-0 flex-1 scroll-mt-4">
+      <div ref={paneRef} className="min-w-0 flex-1 scroll-mt-16 lg:flex lg:min-h-0 lg:flex-col">
         {selected ? (
           <ConversationPane key={selected.enquiryId} conv={selected} enquiry={byId.get(selected.enquiryId)} mailbox={mailbox} onNotice={onNotice} />
         ) : (
@@ -372,8 +441,25 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
   const queryClient = useQueryClient();
   const [showEarlier, setShowEarlier] = useState(false);
   const today = muscatDate(new Date().toISOString());
+  const scroller = useRef<HTMLDivElement>(null);
+  /** Distance from the bottom to keep when earlier e-mails are added above (null: jump to the newest). */
+  const keepFromBottom = useRef<number | null>(null);
 
   const thread = useQuery({ queryKey: ["enquiry-emails", conv.enquiryId], queryFn: () => fetchEnquiryEmails(conv.enquiryId) });
+
+  // Open at the newest e-mail, like a chat; showing earlier ones keeps the current view in place.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight - (keepFromBottom.current ?? 0);
+    keepFromBottom.current = null;
+  }, [thread.isSuccess, showEarlier]);
+
+  function toggleEarlier() {
+    const el = scroller.current;
+    keepFromBottom.current = showEarlier ? null : el ? el.scrollHeight - el.scrollTop : null;
+    setShowEarlier(!showEarlier);
+  }
   const messages = thread.data ?? [...conv.emails].reverse();
   // Open at the first e-mail of the day (or search hit) being looked at; anything before folds away.
   const firstShown = conv.emails.at(-1)!.received_at;
@@ -406,9 +492,9 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
   });
 
   return (
-    <article aria-label={`Conversation on ${conv.reference}`} className="space-y-3">
-      {/* Enquiry header */}
-      <div className="flex flex-wrap items-center gap-4 rounded-panel border border-line bg-surface p-4">
+    <article aria-label={`Conversation on ${conv.reference}`} className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
+      {/* Enquiry header: stays in view */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-panel border border-line bg-surface px-4 py-3">
         <ModeTile mode={enquiry?.shipment_mode} size="lg" />
         <div className="min-w-60 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -444,18 +530,28 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
         </dl>
       </div>
 
-      {/* Conversation */}
-      <div className="space-y-3 rounded-panel border border-line bg-surface p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="min-w-0 flex-1 text-body font-semibold text-ink">{rowSubject(latest.subject, conv.reference) || "(no subject)"}</h2>
-          {earlier.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setShowEarlier(!showEarlier)} aria-expanded={showEarlier}>
-              {showEarlier ? "Hide earlier" : `Show ${earlier.length} earlier`}
-            </Button>
-          )}
+      {/* Conversation: subject and actions stay put, the e-mails scroll between them */}
+      <div className="flex flex-col overflow-hidden rounded-panel border border-line bg-surface lg:min-h-0 lg:flex-1">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+          <h2 className="min-w-0 flex-1 truncate text-body font-semibold text-ink" title={latest.subject ?? undefined}>
+            {rowSubject(latest.subject, conv.reference) || "(no subject)"}
+          </h2>
+          <span className="text-meta text-ink-muted tabular-nums">
+            {visible.length} of {messages.length} shown
+          </span>
         </div>
-        {thread.error && <Alert>{errorMessage(thread.error)}</Alert>}
-        {unlink.error && <Alert>{errorMessage(unlink.error)}</Alert>}
+
+        <div ref={scroller} className="space-y-3 p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          {earlier.length > 0 && (
+            <div className="flex justify-center">
+              <Button variant="secondary" size="sm" onClick={toggleEarlier} aria-expanded={showEarlier}>
+                <Icon name={showEarlier ? "chevronDown" : "chevronUp"} className="size-3.5" />
+                {showEarlier ? "Hide earlier e-mails" : `Show ${earlier.length} earlier e-mail${earlier.length === 1 ? "" : "s"}`}
+              </Button>
+            </div>
+          )}
+          {thread.error && <Alert>{errorMessage(thread.error)}</Alert>}
+          {unlink.error && <Alert>{errorMessage(unlink.error)}</Alert>}
 
         <ol className="space-y-3">
           {visible.map((m, i) => {
@@ -475,8 +571,9 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
             );
           })}
         </ol>
+        </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-4 py-3">
           <Link to={`/enquiries/${conv.enquiryId}`} className={buttonClass("primary")}>
             Open enquiry
           </Link>

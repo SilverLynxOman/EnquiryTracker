@@ -41,8 +41,8 @@ export function AttachmentLink({ file }: { file: EmailAttachment }) {
   const [busy, setBusy] = useState(false);
   if (!file.storage_path) {
     return (
-      <span className="inline-flex items-center gap-1 text-meta text-ink-muted" title={file.skipped ?? undefined}>
-        <Icon name="paperclip" className="size-3.5" />
+      <span className="inline-flex max-w-full items-start gap-1 text-meta break-all text-ink-muted" title={file.skipped ?? undefined}>
+        <Icon name="paperclip" className="mt-0.5 size-3.5 shrink-0" />
         {file.filename} ({fmtSize(file.size)}
         {file.skipped ? `, ${file.skipped}` : ""})
       </span>
@@ -60,14 +60,14 @@ export function AttachmentLink({ file }: { file: EmailAttachment }) {
     }
   }
   return (
-    <span className="text-meta">
+    <span className="max-w-full text-meta break-all">
       <button
         type="button"
         onClick={open}
         disabled={busy}
-        className="inline-flex items-center gap-1 rounded-control text-primary hover:text-primary-hover hover:underline disabled:text-ink-muted"
+        className="inline-flex max-w-full items-start gap-1 rounded-control text-left text-primary hover:text-primary-hover hover:underline disabled:text-ink-muted"
       >
-        <Icon name="paperclip" className="size-3.5" />
+        <Icon name="paperclip" className="mt-0.5 size-3.5 shrink-0" />
         {file.filename}
       </button>{" "}
       <span className="text-ink-muted">({fmtSize(file.size)})</span>
