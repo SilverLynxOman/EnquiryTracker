@@ -94,12 +94,16 @@ export interface AiAttachment {
 const PDF = "application/pdf";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
-/** Which attachments to send to Claude: real PDFs and pictures (not signature logos), within limits. */
-export function attachmentsForAi(attachments: AttachmentMeta[], maxFiles = 3, maxBytes = 4_000_000): AttachmentMeta[] {
-  return attachments
+/**
+ * Which attachments to send to Claude: real PDFs and pictures (not signature logos), within limits.
+ * Every page of a PDF is billed as text plus an image, so by default only one file goes along, a PDF
+ * before pictures (the RFQ is usually the first PDF). The prompt still lists every attachment by name.
+ */
+export function attachmentsForAi(attachments: AttachmentMeta[], maxFiles = 1, maxBytes = 4_000_000): AttachmentMeta[] {
+  const readable = attachments
     .filter((a) => !a.inline && a.size > 0 && a.size <= maxBytes)
-    .filter((a) => a.mime_type === PDF || (IMAGE_TYPES.includes(a.mime_type) && a.size >= 20_000))
-    .slice(0, maxFiles);
+    .filter((a) => a.mime_type === PDF || (IMAGE_TYPES.includes(a.mime_type) && a.size >= 20_000));
+  return [...readable.filter((a) => a.mime_type === PDF), ...readable.filter((a) => a.mime_type !== PDF)].slice(0, maxFiles);
 }
 
 function fmtSize(bytes: number): string {

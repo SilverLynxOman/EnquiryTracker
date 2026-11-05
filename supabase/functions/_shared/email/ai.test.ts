@@ -83,7 +83,10 @@ describe("attachments and prompt", () => {
       file("rates.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 30_000),
       file("huge.pdf", "application/pdf", 9_000_000),
     ];
-    expect(attachmentsForAi(list).map((a) => a.filename)).toEqual(["photo.jpg", "rfq.pdf"]);
+    // One file by default, a PDF before pictures; more when asked for, PDFs still first.
+    expect(attachmentsForAi(list).map((a) => a.filename)).toEqual(["rfq.pdf"]);
+    expect(attachmentsForAi(list, 3).map((a) => a.filename)).toEqual(["rfq.pdf", "photo.jpg"]);
+    expect(attachmentsForAi(list.filter((a) => a.mime_type !== "application/pdf")).map((a) => a.filename)).toEqual(["photo.jpg"]);
   });
 
   it("describes the e-mail, the known customer and the candidates", () => {
