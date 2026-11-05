@@ -1,0 +1,150 @@
+name: Edge Functions
+
+# Keeps the Supabase Edge Functions in step with supabase/functions.
+# - Merges to main: deploys the functions changed since the last successful deploy from main: a file in the
+#   function's folder, shared code it imports (supabase/functions/_shared) or its [functions.NAME] section of
+#   supabase/config.toml (scripts/edge_functions.py decides). With no earlier deploy, every function. A failed run is
+#   caught up by the next one, because only successful runs move that starting point.
+#   verify_jwt comes from supabase/config.toml and is also passed to the CLI explicitly: gmail-sync is called by
+#   pg_cron with a Vault secret, not a JWT, so deploying it with the JWT check would stop the mail intake.
+#   Afterwards each function with verify_jwt = false must answer a POST without credentials itself (its own JSON
+#   {"error": ...}): that shows it started and that the gateway lets such requests through.
+# - Pull requests: lists what merging would deploy (no secrets needed).
+# - By hand (Actions > Edge Functions > Run workflow): deploy one function, or all of them.
+# Removing a function is not automatic: delete it in the Supabase dashboard (Edge Functions).
+#
+# Uses the SUPABASE_ACCESS_TOKEN repository secret, the same one as the migrations workflow.
+
+on:
+  pull_request:
+    paths:
+      - "supabase/functions/**"
+      - "supabase/config.toml"
+      - "scripts/edge_functions.py"
+      - ".github/workflows/functions.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+      - "supabase/config.toml"
+      - "scripts/edge_functions.py"
+      - ".github/workflows/functions.yml"
+  workflow_dispatch:
+    inputs:
+      function:
+        description: "Function to deploy (a folder name in supabase/functions), or all"
+        required: true
+        default: all
+
+concurrency:
+  group: supabase-functions-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  SUPABASE_PROJECT_REF: jaaueukrzijesejjaplt
+  SUPABASE_CLI_VERSION: 2.122.1
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  deploy:
+    name: ${{ github.event_name == 'pull_request' && 'Preview function deploys' || 'Deploy functions' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Which functions
+        id: plan
+        env:
+          REQUESTED: ${{ github.event.inputs.function }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$REQUESTED" = "all" ]; then
+              names=$(python3 scripts/edge_functions.py list)
+            else
+              python3 scripts/edge_functions.py verify-jwt "$REQUESTED" > /dev/null
+              names="$REQUESTED"
+            fi
+          else
+            # The commit of the last successful deploy from a merge to main. None yet (or the lookup failed) means every
+            # function: deploying unchanged code again is harmless.
+            base=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow functions.yml --branch main --event push --status success \
+              --limit 1 --json headSha --jq '.[0].headSha // ""' 2>/dev/null || true)
+            if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then base=""; fi
+            echo "Last deploy from main: ${base:-none}"
+            names=$(python3 scripts/edge_functions.py changed "$base")
+          fi
+          names=$(echo $names)
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Edge Functions"
+            if [ -z "$names" ]; then echo "Nothing to deploy."; fi
+            for f in $names; do echo "- \`$f\` (verify_jwt: $(python3 scripts/edge_functions.py verify-jwt "$f"))"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "To deploy: ${names:-nothing}"
+
+      - name: Check secrets
+        if: github.event_name != 'pull_request' && steps.plan.outputs.names != ''
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error title=Functions not deployed::Add the SUPABASE_ACCESS_TOKEN repository secret (Settings > Secrets and variables > Actions), then re-run this workflow."
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: github.event_name != 'pull_request' && steps.plan.outputs.names != ''
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Deploy
+        if: github.event_name != 'pull_request' && steps.plan.outputs.names != ''
+        env:
+          NAMES: ${{ steps.plan.outputs.names }}
+        run: |
+          for f in $NAMES; do
+            flags=()
+            if [ "$(python3 scripts/edge_functions.py verify-jwt "$f")" = "false" ]; then flags+=(--no-verify-jwt); fi
+            echo "::group::Deploy $f ${flags[*]}"
+            supabase functions deploy "$f" --project-ref "$SUPABASE_PROJECT_REF" "${flags[@]}"
+            echo "::endgroup::"
+          done
+
+      - name: Health check
+        if: github.event_name != 'pull_request' && steps.plan.outputs.names != ''
+        env:
+          NAMES: ${{ steps.plan.outputs.names }}
+        run: |
+          failed=0
+          for f in $NAMES; do
+            if [ "$(python3 scripts/edge_functions.py verify-jwt "$f")" = "true" ]; then
+              echo "$f: skipped (needs a signed-in user)"
+              continue
+            fi
+            ok=0
+            # A new version can take a few seconds to serve.
+            for attempt in 1 2 3 4 5 6; do
+              reply=$(curl -sS -X POST "https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/$f" \
+                -H "Content-Type: application/json" -d '{}' -w '\n%{http_code}' || true)
+              code=${reply##*$'\n'}
+              body=${reply%$'\n'*}
+              if python3 -c 'import json, sys; d = json.loads(sys.argv[1]); sys.exit(0 if isinstance(d, dict) and "error" in d else 1)' "$body" 2>/dev/null \
+                 && [ "$code" -ge 400 ] && [ "$code" -lt 500 ]; then
+                echo "$f: answered itself (HTTP $code: $body)"
+                ok=1
+                break
+              fi
+              echo "$f: attempt $attempt: HTTP $code: ${body:0:300}"
+              sleep 5
+            done
+            if [ "$ok" = 0 ]; then
+              echo "::error title=$f did not answer::$f did not answer a request without credentials itself after deploying. Check its logs in Supabase (Edge Functions > $f > Logs)."
+              failed=1
+            fi
+          done
+          exit $failed
