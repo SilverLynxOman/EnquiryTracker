@@ -481,6 +481,17 @@ export async function fetchPeriodRows(from: string, to: string): Promise<{ raise
   return { raised, confirmed };
 }
 
+/** The last day before `before` on which an enquiry was raised or a job confirmed, or null if none. */
+export async function fetchLastActiveDay(before: string): Promise<string | null> {
+  const [raised, confirmed] = await Promise.all([
+    supabase.from("enquiry_register").select("enquiry_date").lt("enquiry_date", before).neq("status", "cancelled").order("enquiry_date", { ascending: false }).limit(1),
+    supabase.from("enquiry_register").select("confirmed_date").lt("confirmed_date", before).eq("status", "confirmed").order("confirmed_date", { ascending: false }).limit(1),
+  ]);
+  const a = unwrap<{ enquiry_date: string }[]>(raised)[0]?.enquiry_date ?? null;
+  const b = unwrap<{ confirmed_date: string }[]>(confirmed)[0]?.confirmed_date ?? null;
+  return a && b ? (a > b ? a : b) : (a ?? b);
+}
+
 export async function fetchBreakdown(from: string, to: string, dimension: BreakdownDimension): Promise<BreakdownRow[]> {
   const rows = unwrap<BreakdownRow[]>(await supabase.rpc("enquiry_breakdown", { p_from: from, p_to: to, p_dimension: dimension }));
   return rows.map((r) => ({ ...r, sell_total: Number(r.sell_total), profit: Number(r.profit) }));

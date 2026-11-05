@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   breakdownLabel,
+  comparePeriod,
+  dailySeries,
+  monthPace,
+  periodHeading,
+  rangeLabel,
+  reportFigures,
   buildPeriodReport,
   dayPeriod,
   modeTotals,
@@ -109,5 +115,49 @@ describe("helpers", () => {
     expect(breakdownLabel("mode", "BREAK_BULK")).toBe("Break bulk");
     expect(breakdownLabel("trade_type", "CT")).toBe("CT — Cross trade");
     expect(breakdownLabel("customer", "CONSOL CLUB")).toBe("CONSOL CLUB");
+  });
+});
+
+describe("on-screen report", () => {
+  it("writes periods and ranges in words", () => {
+    expect(periodHeading(dayPeriod("2026-11-05"))).toBe("Thursday, 5 November 2026");
+    expect(periodHeading(weekPeriod("2026-11-05"))).toBe("31 Oct – 6 Nov 2026");
+    expect(periodHeading(monthPeriod("2026-11-05"))).toBe("November 2026");
+    expect(rangeLabel("2026-10-01", "2026-10-05")).toBe("1–5 Oct");
+    expect(rangeLabel("2025-12-20", "2026-01-04", true)).toBe("20 Dec 2025 – 4 Jan 2026");
+  });
+
+  it("compares a finished period with the whole one before it", () => {
+    expect(comparePeriod(dayPeriod("2026-11-05"), "2026-11-06")).toMatchObject({ previous: { from: "2026-11-04", to: "2026-11-04" }, label: "Wed 4 Nov" });
+    expect(comparePeriod(monthPeriod("2026-10-10"), "2026-11-06")).toMatchObject({ previous: { from: "2026-09-01", to: "2026-09-30" }, label: "September" });
+  });
+
+  it("compares a running period like for like", () => {
+    const c = comparePeriod(monthPeriod("2026-11-01"), "2026-11-05");
+    expect(c.current).toMatchObject({ from: "2026-11-01", to: "2026-11-05" });
+    expect(c.previous).toMatchObject({ from: "2026-10-01", to: "2026-10-05" });
+    expect(c.label).toBe("1–5 Oct");
+    expect(comparePeriod(weekPeriod("2026-11-02"), "2026-11-02").previous).toMatchObject({ from: "2026-10-24", to: "2026-10-26" });
+  });
+
+  it("counts the figures behind the tiles", () => {
+    const raised = [
+      enquiry({ id: "1", reference: "R1", status: "confirmed", quoted_date: "2026-11-02", enquiry_date: "2026-11-02" }),
+      enquiry({ id: "2", reference: "R2", status: "quoted", quoted_date: "2026-11-03", enquiry_date: "2026-11-03" }),
+      enquiry({ id: "3", reference: "R3", status: "new", enquiry_date: "2026-11-03" }),
+      enquiry({ id: "4", reference: "R4", status: "cancelled", enquiry_date: "2026-11-03" }),
+    ];
+    const confirmed = [
+      enquiry({ id: "1", reference: "R1", status: "confirmed", enquiry_date: "2026-11-02", confirmed_date: "2026-11-04", sell_total: 1000, profit: 150 }),
+      enquiry({ id: "9", reference: "R9", status: "confirmed", confirmed_date: "2026-11-04", enquiry_date: "2026-10-20", sell_total: 500, profit: 50.5 }),
+    ];
+    expect(reportFigures(raised, confirmed)).toEqual({ enquiries: 3, quoted: 2, converted: 1, confirmations: 2, sales: 1500, profit: 200.5 });
+    const days = dailySeries({ kind: "weekly", from: "2026-11-02", to: "2026-11-04" }, raised, confirmed);
+    expect(days.map((d) => [d.enquiries, d.confirmed])).toEqual([[1, 0], [2, 0], [0, 2]]);
+  });
+
+  it("projects a running month's profit", () => {
+    expect(monthPace(monthPeriod("2026-11-01"), "2026-11-05", 1000)).toBe(6000);
+    expect(monthPace(monthPeriod("2026-10-01"), "2026-11-05", 1000)).toBeNull();
   });
 });
