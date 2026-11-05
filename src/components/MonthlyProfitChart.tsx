@@ -77,8 +77,8 @@ function useWidth<T extends HTMLElement>() {
   return [ref, width] as const;
 }
 
-/** Single-series column chart of a monthly amount. The table next to it carries every value. */
-export function MonthlyProfitChart({ data, label }: { data: MonthValue[]; label: string }) {
+/** Single-series column chart of a monthly figure. The table next to it carries every value. */
+export function MonthlyProfitChart({ data, label, format = fmtMoney }: { data: MonthValue[]; label: string; format?: (v: number) => string }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [active, setActive] = useState<number | null>(null);
 
@@ -106,7 +106,7 @@ export function MonthlyProfitChart({ data, label }: { data: MonthValue[]; label:
   return (
     <div ref={ref} className="relative" style={{ height: HEIGHT }}>
       {width > 0 && (
-        <svg width={width} height={HEIGHT} role="img" aria-label={`${label}, column chart. Every value is in the table below.`}>
+        <svg width={width} height={HEIGHT} role="img" aria-label={`${label}, column chart. Every value is in the table view.`}>
           {ticks.map((t) => (
             <g key={t}>
               <line x1={M.left} x2={width - M.right} y1={y(t)} y2={y(t)} stroke={t === 0 ? "#cbd5e1" : GRID} strokeWidth={1} shapeRendering="crispEdges" />
@@ -139,7 +139,7 @@ export function MonthlyProfitChart({ data, label }: { data: MonthValue[]; label:
                   fill="transparent"
                   tabIndex={0}
                   role="img"
-                  aria-label={`${fullMonth(d.month)}: ${fmtMoney(d.value)}${d.note ? `, ${d.note}` : ""}`}
+                  aria-label={`${fullMonth(d.month)}: ${format(d.value)}${d.note ? `, ${d.note}` : ""}`}
                   onPointerEnter={() => setActive(i)}
                   onPointerLeave={() => setActive((a) => (a === i ? null : a))}
                   onFocus={() => setActive(i)}
@@ -170,7 +170,7 @@ export function MonthlyProfitChart({ data, label }: { data: MonthValue[]; label:
           className="pointer-events-none absolute z-10 whitespace-nowrap rounded-md border border-line bg-white px-2.5 py-1.5 text-meta shadow-md"
           style={{ left: tipX, top: tipY, transform: tipAlign }}
         >
-          <div className="text-sm font-semibold tabular-nums text-ink">{fmtMoney(activeDatum.value)}</div>
+          <div className="text-sm font-semibold tabular-nums text-ink">{format(activeDatum.value)}</div>
           <div className="text-ink-muted">
             {fullMonth(activeDatum.month)}
             {activeDatum.note ? ` · ${activeDatum.note}` : ""}

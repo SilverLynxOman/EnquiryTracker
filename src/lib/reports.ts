@@ -220,3 +220,124 @@ export function summaryTotals(rows: SalespersonSummaryRow[]): SummaryTotals {
   t.profit = round2(t.profit);
   return t;
 }
+
+// --- On-screen report: headings, comparisons and the figures behind the KPI tiles ---------------
+
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const dayNum = (iso: string) => Number(iso.slice(8, 10));
+const monthShort = (iso: string) => SHORT_MONTHS[Number(iso.slice(5, 7)) - 1];
+const titleMonth = (iso: string) => `${monthName(iso).slice(0, 1)}${monthName(iso).slice(1).toLowerCase()}`;
+
+/** "5 Nov", or "5 Nov 2026" with the year. */
+export function shortDate(iso: string, withYear = false): string {
+  return `${dayNum(iso)} ${monthShort(iso)}${withYear ? ` ${iso.slice(0, 4)}` : ""}`;
+}
+
+export function weekdayName(iso: string): string {
+  return WEEKDAYS[weekday(iso)];
+}
+
+/** "31 Oct – 6 Nov 2026", "1–5 Oct", "5 Nov". */
+export function rangeLabel(from: string, to: string, withYear = false): string {
+  if (from === to) return shortDate(from, withYear);
+  const year = withYear ? ` ${to.slice(0, 4)}` : "";
+  if (from.slice(0, 7) === to.slice(0, 7)) return `${dayNum(from)}–${dayNum(to)} ${monthShort(to)}${year}`;
+  const fromYear = withYear && from.slice(0, 4) !== to.slice(0, 4) ? ` ${from.slice(0, 4)}` : "";
+  return `${shortDate(from)}${fromYear} – ${shortDate(to)}${year}`;
+}
+
+/** Heading of the on-screen report: "Thursday, 5 November 2026", "31 Oct – 6 Nov 2026", "November 2026". */
+export function periodHeading(p: Period): string {
+  if (p.kind === "daily") return `${weekdayName(p.from)}, ${dayNum(p.from)} ${titleMonth(p.from)} ${p.from.slice(0, 4)}`;
+  if (p.kind === "monthly") return `${titleMonth(p.from)} ${p.from.slice(0, 4)}`;
+  return rangeLabel(p.from, p.to, true);
+}
+
+/** The part of the period up to today: the whole period once it is over; null if it hasn't started. */
+export function elapsed(p: Period, today: string): Period | null {
+  if (today < p.from) return null;
+  return today >= p.to ? p : { ...p, to: today };
+}
+
+/**
+ * What the period is measured against: the period before, like for like. While a period is still running
+ * only its days so far count, against the same number of days at the start of the period before.
+ */
+export function comparePeriod(p: Period, today: string): { current: Period; previous: Period; label: string } {
+  const current = elapsed(p, today) ?? p;
+  const prevWhole = shiftPeriod(p, -1);
+  const partial = current.to !== p.to;
+  const days = daysInRange(current.from, current.to);
+  const previous = partial ? { ...prevWhole, to: addDays(prevWhole.from, days - 1) } : prevWhole;
+  let label: string;
+  if (p.kind === "daily") label = `${weekdayName(previous.from).slice(0, 3)} ${shortDate(previous.from)}`;
+  else if (partial) label = rangeLabel(previous.from, previous.to);
+  else label = p.kind === "monthly" ? titleMonth(previous.from) : "the week before";
+  return { current, previous, label };
+}
+
+export interface ReportFigures {
+  /** Raised in the period, cancelled not counted. */
+  enquiries: number;
+  /** Of those, the ones quoted. */
+  quoted: number;
+  /** Of those, the ones now confirmed. */
+  converted: number;
+  /** Jobs confirmed in the period, whenever raised. */
+  confirmations: number;
+  sales: number;
+  profit: number;
+}
+
+export function reportFigures(raised: EnquiryRow[], confirmed: EnquiryRow[]): ReportFigures {
+  const live = raised.filter((r) => r.status !== "cancelled");
+  return {
+    enquiries: live.length,
+    quoted: live.filter((r) => r.quoted_date || r.status === "quoted" || r.status === "confirmed").length,
+    converted: live.filter((r) => r.status === "confirmed").length,
+    confirmations: confirmed.length,
+    sales: sum(confirmed, (r) => r.sell_total),
+    profit: sum(confirmed, (r) => r.profit),
+  };
+}
+
+export interface DayCount {
+  date: string;
+  enquiries: number;
+  confirmed: number;
+}
+
+/** Enquiries raised (not cancelled) and jobs confirmed on each day of the period. */
+export function dailySeries(p: Period, raised: EnquiryRow[], confirmed: EnquiryRow[]): DayCount[] {
+  const days = new Map<string, DayCount>();
+  for (let d = p.from; d <= p.to; d = addDays(d, 1)) days.set(d, { date: d, enquiries: 0, confirmed: 0 });
+  for (const r of raised) if (r.status !== "cancelled") days.get(r.enquiry_date)!.enquiries++;
+  for (const r of confirmed) {
+    const day = r.confirmed_date && days.get(r.confirmed_date);
+    if (day) day.confirmed++;
+  }
+  return [...days.values()];
+}
+
+/** Customers with the most profit on jobs confirmed in the period. */
+export function topCustomers(confirmed: EnquiryRow[], n = 5): { name: string; profit: number; jobs: number }[] {
+  const by = new Map<string, { name: string; profit: number; jobs: number }>();
+  for (const r of confirmed) {
+    const t = by.get(r.customer_name) ?? { name: r.customer_name, profit: 0, jobs: 0 };
+    t.profit += Number(r.profit) || 0;
+    t.jobs++;
+    by.set(r.customer_name, t);
+  }
+  return [...by.values()]
+    .map((t) => ({ ...t, profit: round2(t.profit) }))
+    .sort((a, b) => b.profit - a.profit || b.jobs - a.jobs)
+    .slice(0, n);
+}
+
+/** Profit for the whole month at the rate so far, while the month is running; null otherwise. */
+export function monthPace(p: Period, today: string, profit: number): number | null {
+  if (p.kind !== "monthly" || today < p.from || today >= p.to) return null;
+  return Math.round((profit / daysInRange(p.from, today)) * daysInRange(p.from, p.to));
+}
