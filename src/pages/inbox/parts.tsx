@@ -301,12 +301,18 @@ export function Bubble({
   mailbox,
   onUnlink,
   unlinking = false,
+  sentBy,
+  onReply,
 }: {
   email: EmailMessage;
   mailbox?: string;
   /** Shows "Wrong enquiry" (Follow-up e-mails). */
   onUnlink?: () => void;
   unlinking?: boolean;
+  /** Who sent it from the app, when it was. */
+  sentBy?: string;
+  /** Shows "Reply" (Follow-up e-mails). */
+  onReply?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [quoted, setQuoted] = useState(false);
@@ -326,6 +332,7 @@ export function Bubble({
             {name}
           </span>
           <span className={`rounded-full px-1.5 text-[11px] font-semibold ${tag.className}`}>{tag.label}</span>
+          {sentBy && <span className="rounded-full bg-surface px-1.5 text-[11px] font-semibold text-primary">sent from the app by {sentBy}</span>}
           <span className="ml-auto text-meta tabular-nums text-ink-muted">{muscatTime(email.received_at)}</span>
         </div>
         {text ? (
@@ -351,6 +358,11 @@ export function Bubble({
           <div className="mt-2 max-h-80 overflow-auto border-l-2 border-line pl-3 text-meta whitespace-pre-wrap break-words text-ink-muted">{earlier}</div>
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 text-meta">
+          {onReply && (
+            <button type="button" className="font-medium text-primary hover:underline" onClick={onReply}>
+              Reply
+            </button>
+          )}
           {earlier && (
             <button type="button" className="text-primary hover:underline" aria-expanded={quoted} onClick={() => setQuoted(!quoted)}>
               {quoted ? "Hide quoted history" : "Quoted history"}

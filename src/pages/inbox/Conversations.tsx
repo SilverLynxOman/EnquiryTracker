@@ -5,7 +5,7 @@ import { useAuth } from "../../auth/AuthProvider";
 import { shownName } from "../../components/EmailView";
 import { Icon } from "../../components/icons";
 import { Alert, Button, Empty, Spinner, StatusBadge, buttonClass, inputClass } from "../../components/ui";
-import { fetchEnquiriesByIds, fetchEnquiryEmails, fetchFollowUpHistory, linkEmail, logFollowUp, searchEmails, undoFollowUp } from "../../lib/api";
+import { checkMailNow, fetchEmailReplies, fetchEnquiriesByIds, fetchEnquiryEmails, fetchFollowUpHistory, fetchProfileNames, linkEmail, logFollowUp, searchEmails, undoFollowUp } from "../../lib/api";
 import {
   dayLabel,
   decodeEntities,
@@ -20,9 +20,10 @@ import {
 import { shipmentLabel, shortPort, TRADE_LABELS } from "../../lib/display";
 import { Avatar, Bubble, ModeTile, route } from "./parts";
 import { DayPicker, FilterTags, FiltersMenu, ViewToggle } from "./ListToolbar";
+import { ReplyBox } from "./ReplyBox";
 import { gmailThreadUrl, muscatDate } from "../../lib/emailDrafts";
 import { errorMessage } from "../../lib/format";
-import type { EnquiryRow } from "../../lib/types";
+import type { EmailMessage, EmailReply, EnquiryRow } from "../../lib/types";
 
 /** The most e-mails one day (or one search) loads; a busy day is a few hundred. */
 const DAY_LIMIT = 500;
@@ -309,6 +310,31 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
     },
   });
 
+  // Replying from the app: which e-mail is being answered, and whether to everyone on it.
+  const [reply, setReply] = useState<{ target: EmailMessage; all: boolean } | null>(null);
+  const replies = useQuery({ queryKey: ["email-replies", conv.enquiryId], queryFn: () => fetchEmailReplies(conv.enquiryId), staleTime: 30_000 });
+  const names = useQuery({ queryKey: ["profile-names"], queryFn: fetchProfileNames, staleTime: 600_000 });
+  const sentBy = new Map((replies.data ?? []).map((r) => [r.gmail_message_id, names.data?.get(r.sent_by ?? "") ?? "a colleague"]));
+  const filed = new Set(messages.map((m) => m.gmail_message_id));
+  // Sent from the app but not read back from Gmail yet (the next mail check files it).
+  const pending = (replies.data ?? []).filter((r) => !filed.has(r.gmail_message_id));
+
+  function sent(message: string) {
+    setReply(null);
+    onNotice(`${message} It is in Gmail's Sent folder and appears in this conversation after the next mail check.`);
+    void queryClient.invalidateQueries({ queryKey: ["email-replies", conv.enquiryId] });
+    // Read the mailbox now so the sent e-mail is filed here without waiting for the 5-minute job.
+    void checkMailNow()
+      .catch(() => undefined)
+      .finally(() => {
+        for (const key of ["enquiry-emails", "inbox", "email-replies"]) void queryClient.invalidateQueries({ queryKey: [key] });
+      });
+  }
+
+  useLayoutEffect(() => {
+    if (pending.length && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  }, [pending.length]);
+
   return (
     <article aria-label={`Conversation on ${conv.reference}`} className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
       {/* Enquiry header: stays in view */}
@@ -384,19 +410,57 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
                     <span className="h-px flex-1 bg-line" />
                   </div>
                 )}
-                <Bubble email={m} mailbox={mailbox} unlinking={unlink.isPending && unlink.variables === m.id} onUnlink={canEdit ? () => unlink.mutate(m.id) : undefined} />
+                <Bubble
+                  email={m}
+                  mailbox={mailbox}
+                  unlinking={unlink.isPending && unlink.variables === m.id}
+                  onUnlink={canEdit ? () => unlink.mutate(m.id) : undefined}
+                  sentBy={sentBy.get(m.gmail_message_id)}
+                  onReply={canEdit ? () => setReply({ target: m, all: false }) : undefined}
+                />
               </li>
             );
           })}
+          {pending.map((r) => (
+            <li key={r.id}>
+              <PendingReply reply={r} by={names.data?.get(r.sent_by ?? "") ?? "a colleague"} />
+            </li>
+          ))}
         </ol>
         </div>
 
+        {reply && (
+          <div className="flex shrink-0 flex-col lg:max-h-[60%]">
+            <ReplyBox
+              key={`${reply.target.id}-${reply.all}`}
+              enquiryId={conv.enquiryId}
+              reference={conv.reference}
+              target={reply.target}
+              all={reply.all}
+              mailbox={mailbox}
+              onClose={() => setReply(null)}
+              onSent={sent}
+            />
+          </div>
+        )}
+
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-4 py-3">
-          <Link to={`/enquiries/${conv.enquiryId}`} className={buttonClass("primary")}>
+          <Link to={`/enquiries/${conv.enquiryId}`} className={buttonClass(canEdit ? "secondary" : "primary")}>
             Open enquiry
           </Link>
-          <a href={gmailThreadUrl(latest.gmail_thread_id, mailbox)} target="_blank" rel="noreferrer" className={buttonClass("secondary")}>
-            Reply in Gmail
+          {canEdit && (
+            <>
+              <Button variant={reply && !reply.all ? "secondary" : "primary"} onClick={() => setReply({ target: latest, all: false })} title="Reply to the latest e-mail, from the pricing mailbox">
+                <Icon name="send" />
+                Reply
+              </Button>
+              <Button variant="secondary" onClick={() => setReply({ target: latest, all: true })} title="Reply to everyone on the latest e-mail">
+                Reply all
+              </Button>
+            </>
+          )}
+          <a href={gmailThreadUrl(latest.gmail_thread_id, mailbox)} target="_blank" rel="noreferrer" className={buttonClass("ghost")}>
+            Open in Gmail
             <Icon name="external" className="size-3.5" />
           </a>
           {canEdit && me && (
@@ -415,5 +479,37 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
         </div>
       </div>
     </article>
+  );
+}
+
+/** A reply sent from the app that the mail check has not read back yet. */
+function PendingReply({ reply, by }: { reply: EmailReply; by: string }) {
+  const [open, setOpen] = useState(false);
+  const text = reply.body_text.split(/\n-- \n|\nOn .+ wrote:\n/)[0]!.trim();
+  return (
+    <div className="flex flex-row-reverse items-start gap-2.5">
+      <Avatar name={by} type="self" className="size-9 text-meta" />
+      <div className="max-w-[85%] min-w-0 rounded-panel rounded-tr-sm border border-dashed border-primary/50 bg-selected/40 px-3.5 py-2.5">
+        <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="text-meta font-bold text-ink">Sent by {by}</span>
+          <span className="rounded-full bg-surface px-1.5 text-[11px] font-semibold text-primary">from the app</span>
+          <span className="ml-auto text-meta tabular-nums text-ink-muted">{muscatTime(reply.sent_at)}</span>
+        </div>
+        <div className="text-meta text-ink-muted">To {[...reply.to_emails, ...reply.cc_emails].join(", ")}</div>
+        <div className="mt-1 text-body whitespace-pre-wrap break-words text-ink">{open || text.length <= 400 ? text : `${text.slice(0, 400)}…`}</div>
+        {text.length > 400 && (
+          <button type="button" className="text-meta text-primary hover:underline" onClick={() => setOpen(!open)}>
+            {open ? "Show less" : "Show all"}
+          </button>
+        )}
+        {reply.attachments.length > 0 && (
+          <div className="mt-1 text-meta text-ink-muted">
+            <Icon name="paperclip" className="mr-1 inline size-3.5" />
+            {reply.attachments.map((a) => a.filename).join(", ")}
+          </div>
+        )}
+        <div className="mt-1 text-[11px] text-ink-muted">Sent through Gmail · filed here after the next mail check</div>
+      </div>
+    </div>
   );
 }

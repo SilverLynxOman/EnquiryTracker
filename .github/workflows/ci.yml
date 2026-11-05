@@ -23,7 +23,7 @@ jobs:
         with:
           deno-version: v2.x
       - name: Type-check the Edge Functions
-        run: deno check --no-lock --node-modules-dir=none --no-config supabase/functions/gmail-sync/index.ts supabase/functions/user-admin/index.ts
+        run: deno check --no-lock --node-modules-dir=none --no-config supabase/functions/gmail-sync/index.ts supabase/functions/user-admin/index.ts supabase/functions/gmail-send/index.ts
       - name: Build
         run: npm run build
         env:
