@@ -36,7 +36,7 @@ function fmtSize(bytes: number): string {
   return bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1000))} KB`;
 }
 
-function AttachmentLink({ file }: { file: EmailAttachment }) {
+export function AttachmentLink({ file }: { file: EmailAttachment }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   if (!file.storage_path) {

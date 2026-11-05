@@ -78,6 +78,16 @@
   --color-mode-air: #0369a1;
   --color-mode-courier: #047857;
   --color-mode-other: #526075;
+  /* Light grounds for mode tiles and chips (each mode colour above passes 4.5:1 on its ground) */
+  --color-mode-fcl-bg: #fff1e8;
+  --color-mode-lcl-bg: #f1eeff;
+  --color-mode-air-bg: #e5f3fb;
+  --color-mode-courier-bg: #e7f6ef;
+  --color-mode-other-bg: #eef0f4;
+  /* Inbox lanes: the dot and filled pill of each inbox tab */
+  --color-lane-wait: #0f766e;
+  --color-lane-mail: #1d4ed8;
+  --color-lane-mail-bg: #e6eefe;
   /* Team-ship containers by sales person, 3:1 or better on the sky; crew-0 is "no sales person" */
   --color-crew-0: #6b7280;
   --color-crew-1: #c2410c;
