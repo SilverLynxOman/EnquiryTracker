@@ -60,7 +60,7 @@ const STATUS_OF_TAB: Record<Exclude<Tab, "drafts">, EmailStatus> = {
 const refClass = "font-semibold tabular-nums text-primary hover:text-primary-hover hover:underline";
 
 function invalidateAll(qc: QueryClient) {
-  for (const key of ["inbox", "register", "dashboard", "plan", "names", "enquiry-emails"]) qc.invalidateQueries({ queryKey: [key] });
+  for (const key of ["inbox", "register", "dashboard", "window", "names", "enquiry-emails"]) qc.invalidateQueries({ queryKey: [key] });
 }
 
 function syncSummary(r: SyncResult): string {

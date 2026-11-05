@@ -64,7 +64,7 @@ export default function UsersPage() {
       queryClient.setQueryData<UserAccount[]>(USERS, (list) => list && applyChange(list, change, salesPerson));
       setShareAsk(null);
       setNotice(changeNotice(change, others, salesPerson));
-      // An admin who links themself to a sales person gets their game plan as home page straight away.
+      // An admin who links themself to a sales person gets their open quotes (The Window) as home page straight away.
       if (change.user.id === session?.user.id) refreshProfile();
     },
     onError: (e, change) => setFailure(`${userName(change.user)} was not changed. ${errorMessage(e)}`),
@@ -184,7 +184,7 @@ export default function UsersPage() {
                   .
                 </p>
                 <p>
-                  Link each sales person's login to their name in the register: their game plan becomes their home page. Managers and
+                  Link each sales person's login to their name in the register: their open quotes become their home page. Managers and
                   pricing stay unlinked and keep the dashboard.
                 </p>
                 <p>

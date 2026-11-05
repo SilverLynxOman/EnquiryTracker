@@ -13,10 +13,8 @@ import type {
   EnquiryDraft,
   EnquiryPayload,
   EnquiryRow,
-  FollowUpLog,
   FollowUpRecord,
-  GamePlanPrefs,
-  HighFive,
+  HomePrefs,
   ImportBatch,
   ImportPayload,
   InboxCounts,
@@ -25,14 +23,15 @@ import type {
   NamedRef,
   NotDuplicatePair,
   PeriodStats,
-  PlanEnquiry,
   Profile,
+  QuoteTime,
   SalespersonSummaryRow,
   ShipmentMode,
   Status,
   SyncResult,
   TeamWin,
   UserAccount,
+  WindowEnquiry,
 } from "./types";
 
 type Page = { data: unknown; error: { message: string } | null };
@@ -363,20 +362,20 @@ export async function fetchMonthlyTrend(from: string, to: string): Promise<Month
   }));
 }
 
-// --- Game plan and team voyage ---------------------------------------------
+// --- The Window (a sales person's home page) and the team voyage ----------------
 
 export async function fetchSalesPerson(id: string): Promise<NamedRef | null> {
   return unwrap(await supabase.from("sales_persons").select("id, name").eq("id", id).maybeSingle());
 }
 
-const PLAN_COLUMNS = "id, reference, enquiry_date, quoted_date, confirmed_date, status, customer_name, shipment_mode, pol, pod";
+const WINDOW_COLUMNS = "id, reference, enquiry_date, quoted_date, confirmed_date, status, customer_id, customer_name, shipment_mode, pol, pod";
 
-/** One sales person's enquiries raised, quoted or confirmed since `from`: missions, streaks, records and XP. */
-export function fetchPlanEnquiries(salesPersonId: string, from: string): Promise<PlanEnquiry[]> {
-  return fetchAllPages<PlanEnquiry>((a, b) =>
+/** One sales person's enquiries raised, quoted or confirmed since `from`: their open quotes, wins and customers. */
+export function fetchWindowEnquiries(salesPersonId: string, from: string): Promise<WindowEnquiry[]> {
+  return fetchAllPages<WindowEnquiry>((a, b) =>
     supabase
       .from("enquiry_register")
-      .select(PLAN_COLUMNS)
+      .select(WINDOW_COLUMNS)
       .eq("sales_person_id", salesPersonId)
       .or(`enquiry_date.gte.${from},quoted_date.gte.${from},confirmed_date.gte.${from}`)
       .order("enquiry_date")
@@ -414,25 +413,33 @@ export async function saveTeamGoal(month: string, confirmedJobs: number): Promis
   unwrap(await supabase.from("team_goals").upsert({ month, confirmed_jobs: confirmedJobs, updated_at: new Date().toISOString() }));
 }
 
-/** The signed-in user's own game plan settings (Row Level Security keeps them private). */
-export async function fetchGamePlanPrefs(userId: string): Promise<GamePlanPrefs> {
-  const row = unwrap<{ game_plan: GamePlanPrefs } | null>(
+/** Every quoted enquiry received since `from`, and whose it is: how quickly each person, and the team, quotes. */
+export function fetchQuoteTimes(from: string): Promise<QuoteTime[]> {
+  return fetchAllPages<QuoteTime>((a, b) =>
+    supabase
+      .from("enquiry_register")
+      .select("enquiry_date, quoted_date, sales_person_id")
+      .gte("enquiry_date", from)
+      .not("quoted_date", "is", null)
+      .order("enquiry_date")
+      .order("id")
+      .range(a, b),
+  );
+}
+
+/** The signed-in user's own home page settings (Row Level Security keeps them private). */
+export async function fetchHomePrefs(userId: string): Promise<HomePrefs> {
+  const row = unwrap<{ game_plan: HomePrefs | null } | null>(
     await supabase.from("user_prefs").select("game_plan").eq("user_id", userId).maybeSingle(),
   );
   return row?.game_plan ?? {};
 }
 
-export async function saveGamePlanPrefs(userId: string, prefs: GamePlanPrefs): Promise<void> {
+export async function saveHomePrefs(userId: string, prefs: HomePrefs): Promise<void> {
   unwrap(await supabase.from("user_prefs").upsert({ user_id: userId, game_plan: prefs, updated_at: new Date().toISOString() }));
 }
 
-export async function fetchFollowUpLog(salesPersonId: string, since: string): Promise<FollowUpLog[]> {
-  return unwrap(
-    await supabase.from("follow_ups").select("enquiry_id, followed_up_on").eq("sales_person_id", salesPersonId).gte("followed_up_on", since),
-  );
-}
-
-/** Every follow-up logged on these enquiries (by anyone), newest first. For the Follow-ups page's current rows. */
+/** Every follow-up logged on these enquiries (by anyone), newest first: the Follow-ups page's rows and The Window's quotes. */
 export async function fetchFollowUpHistory(enquiryIds: string[]): Promise<FollowUpRecord[]> {
   if (!enquiryIds.length) return [];
   return unwrap(
@@ -451,45 +458,6 @@ export async function logFollowUp(enquiryId: string, salesPersonId: string, day:
 export async function undoFollowUp(enquiryId: string, salesPersonId: string, day: string): Promise<void> {
   unwrap(
     await supabase.from("follow_ups").delete().eq("enquiry_id", enquiryId).eq("sales_person_id", salesPersonId).eq("followed_up_on", day),
-  );
-}
-
-async function countRows(query: PromiseLike<{ count: number | null; error: { message: string } | null }>): Promise<number> {
-  const { count, error } = await query;
-  if (error) throw new Error(error.message);
-  return count ?? 0;
-}
-
-/** Follow-ups logged and high-fives given by a sales person since `since` (XP), and high-fives given today. */
-export async function fetchPlanActivity(salesPersonId: string, since: string, today: string) {
-  const [followUps, highFives, highFivesToday] = await Promise.all([
-    countRows(supabase.from("follow_ups").select("id", { count: "exact", head: true }).eq("sales_person_id", salesPersonId).gte("followed_up_on", since)),
-    countRows(supabase.from("high_fives").select("id", { count: "exact", head: true }).eq("from_sales_person_id", salesPersonId).gte("given_on", since)),
-    countRows(supabase.from("high_fives").select("id", { count: "exact", head: true }).eq("from_sales_person_id", salesPersonId).eq("given_on", today)),
-  ]);
-  return { followUps, highFives, highFivesToday };
-}
-
-const HIGH_FIVE_COLUMNS =
-  "id, message, given_on, created_at, from_sales_person_id, to_sales_person_id, " +
-  "sender:sales_persons!high_fives_from_sales_person_id_fkey(name), giver:profiles!high_fives_from_user_fkey(full_name), " +
-  "receiver:sales_persons!high_fives_to_sales_person_id_fkey(name)";
-
-/** High-fives given since `since`: to one sales person, or (without one) to anyone. Newest first. */
-export async function fetchHighFives(since: string, toSalesPersonId?: string, limit = 20): Promise<HighFive[]> {
-  let q = supabase.from("high_fives").select(HIGH_FIVE_COLUMNS).gte("given_on", since);
-  if (toSalesPersonId) q = q.eq("to_sales_person_id", toSalesPersonId);
-  return unwrap(await q.order("created_at", { ascending: false }).limit(limit));
-}
-
-export async function giveHighFive(input: { to: string; from: string | null; message: string | null; day: string }): Promise<void> {
-  unwrap(
-    await supabase.from("high_fives").insert({
-      to_sales_person_id: input.to,
-      from_sales_person_id: input.from,
-      message: input.message,
-      given_on: input.day,
-    }),
   );
 }
 
