@@ -116,8 +116,10 @@ export default function InboxPage() {
   });
 
   const current = TABS.find((t) => t.key === tab)!;
+  // The conversations view fills the screen below the app header (3.5rem) and the page padding (2rem) on wide screens.
+  const fillScreen = tab === "linked" && params.get("view") !== "list";
   return (
-    <div className="space-y-3">
+    <div className={fillScreen ? "space-y-3 lg:flex lg:h-[calc(100vh-5.5rem)] lg:flex-col" : "space-y-3"}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <nav aria-label="Inbox" className="flex flex-wrap gap-2">
           {TABS.map((t) => {

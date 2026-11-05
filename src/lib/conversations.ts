@@ -48,6 +48,22 @@ export type ModeFilter = "FCL" | "LCL" | "AIR" | "OTHER";
 export function modeGroup(mode: ShipmentMode | null | undefined): ModeFilter {
   return mode === "FCL" || mode === "LCL" || mode === "AIR" ? mode : "OTHER";
 }
+
+/**
+ * The seven days the week strip shows for a selected day: the last week up to today while the
+ * selection is within it, otherwise the selected day's week (Saturday to Friday, the Omani week), never past today.
+ */
+export function weekDays(selected: string, today: string): string[] {
+  let end: string;
+  if (selected > addDays(today, -7)) end = today;
+  else {
+    const weekday = new Date(`${selected}T00:00:00Z`).getUTCDay(); // 0 = Sunday … 6 = Saturday
+    end = addDays(selected, (5 - weekday + 7) % 7); // the Friday that ends its week
+    if (end > today) end = today;
+  }
+  return Array.from({ length: 7 }, (_, i) => addDays(end, i - 6));
+}
+
 // --- Row display helpers (Oman time, UTC+4) -------------------------------------
 
 

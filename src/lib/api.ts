@@ -559,6 +559,25 @@ export async function saveHomePrefs(userId: string, prefs: HomePrefs): Promise<v
   unwrap(await supabase.from("user_prefs").upsert({ user_id: userId, game_plan: prefs, updated_at: new Date().toISOString() }));
 }
 
+/** How many e-mails with this status arrived on each Oman calendar day (YYYY-MM-DD), for the week strip. */
+export async function countEmailsByDay(status: EmailStatus, days: string[], sender: "external" | "staff" | "" = ""): Promise<Record<string, number>> {
+  const counts = await Promise.all(
+    days.map(async (day) => {
+      let query = supabase
+        .from("email_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("status", status)
+        .gte("received_at", `${day}T00:00:00+04:00`)
+        .lt("received_at", `${addDays(day, 1)}T00:00:00+04:00`);
+      if (sender) query = query.eq("sender_type", sender);
+      const { count, error } = await query;
+      if (error) throw error;
+      return [day, count ?? 0] as const;
+    }),
+  );
+  return Object.fromEntries(counts);
+}
+
 /** Every follow-up logged on these enquiries (by anyone), newest first: the Follow-ups page's rows and The Window's quotes. */
 export async function fetchFollowUpHistory(enquiryIds: string[]): Promise<FollowUpRecord[]> {
   if (!enquiryIds.length) return [];
