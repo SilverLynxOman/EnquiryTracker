@@ -212,7 +212,7 @@ export function EnquiryDrawer({
           )}
           {step === "confirm" && <Button onClick={() => onConfirm(row)}>Confirm job</Button>}
           <Link to={`/enquiries/${row.id}`} className={buttonClass(step === "view" ? "primary" : "secondary")}>
-            {canEdit ? "Edit enquiry" : "Open full record"}
+            Open enquiry
             <Icon name="arrowRight" className="size-3.5" />
           </Link>
         </footer>

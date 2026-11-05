@@ -295,7 +295,7 @@ export default function FollowUpsPage() {
             onToggleSort={() => update({ sort: sort === "asc" ? "" : "asc" })}
             onToggle={toggle}
             onTogglePage={togglePage}
-            onConfirm={(r: EnquiryRow) => navigate(`/enquiries/${r.id}?confirm=1`)}
+            onConfirm={(r: EnquiryRow) => navigate(`/enquiries/${r.id}/edit?confirm=1`)}
             onMarkLost={(r: EnquiryRow) => openDialog([r.id])}
             lastFollowUp={lastFollowUp}
             mineToday={mineToday}

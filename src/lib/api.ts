@@ -15,6 +15,7 @@ import type {
   EnquiryPayload,
   EnquiryRow,
   FollowUpRecord,
+  HistoryRow,
   HomePrefs,
   ImportBatch,
   ImportPayload,
@@ -341,6 +342,41 @@ export async function fetchAudit(enquiryId: string): Promise<AuditEntry[]> {
       .eq("enquiry_id", enquiryId)
       .order("changed_at", { ascending: false })
       .limit(100),
+  );
+}
+
+const HISTORY_COLUMNS =
+  "id, reference, enquiry_date, quoted_date, confirmed_date, status, shipment_mode, qty_text, pol, pod, customer_name, agent_name, " +
+  "buy_total, sell_total, profit";
+
+/** A customer's enquiries raised since a date: the customer's record on the enquiry page. */
+export function fetchCustomerHistory(customerId: string, from: string): Promise<HistoryRow[]> {
+  return fetchAllPages<HistoryRow>((a, b) =>
+    supabase
+      .from("enquiry_register")
+      .select(HISTORY_COLUMNS)
+      .eq("customer_id", customerId)
+      .gte("enquiry_date", from)
+      .order("enquiry_date", { ascending: false })
+      .order("id")
+      .range(a, b),
+  );
+}
+
+/** Enquiries raised since a date with the same POL and POD in any letter case, as the reports' lanes: the lane's history. */
+export function fetchLaneHistory(pol: string, pod: string, from: string): Promise<HistoryRow[]> {
+  // ilike without wildcards compares ignoring case; a port name's own % or _ must not act as one.
+  const exactly = (v: string) => v.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+  return fetchAllPages<HistoryRow>((a, b) =>
+    supabase
+      .from("enquiry_register")
+      .select(HISTORY_COLUMNS)
+      .ilike("pol", exactly(pol))
+      .ilike("pod", exactly(pod))
+      .gte("enquiry_date", from)
+      .order("enquiry_date", { ascending: false })
+      .order("id")
+      .range(a, b),
   );
 }
 
