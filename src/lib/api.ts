@@ -558,6 +558,15 @@ export async function searchEmails(s: EmailSearch): Promise<{ rows: EmailListIte
   return { rows: (data ?? []) as unknown as EmailListItem[], total: count ?? 0 };
 }
 
+/** The register rows of these enquiries (the header of each conversation), in no particular order. */
+export async function fetchEnquiriesByIds(ids: string[]): Promise<EnquiryRow[]> {
+  const out: EnquiryRow[] = [];
+  for (let i = 0; i < ids.length; i += 150) {
+    out.push(...unwrap<EnquiryRow[]>(await supabase.from("enquiry_register").select("*").in("id", ids.slice(i, i + 150))));
+  }
+  return out;
+}
+
 export async function fetchEnquiryEmails(enquiryId: string): Promise<EmailMessage[]> {
   return unwrap(
     await supabase.from("email_messages").select(EMAIL_COLUMNS).eq("enquiry_id", enquiryId).order("received_at", { ascending: true }),
