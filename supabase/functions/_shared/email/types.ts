@@ -103,6 +103,9 @@ export interface MatchContext {
 export interface AiResult {
   classification: Classification;
   confidence: number;
+  /** True when the e-mail is about pricing (rates, quotations, revisions, acceptance); false for purely
+   *  operational mail on a running job; null when Claude did not say (answers from before the field). */
+  about_pricing: boolean | null;
   reason: string;
   summary: string;
   related_candidate_id: string | null;

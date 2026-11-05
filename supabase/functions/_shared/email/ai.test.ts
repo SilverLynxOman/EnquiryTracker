@@ -55,6 +55,13 @@ describe("normaliseAiResult", () => {
     expect(() => normaliseAiResult(aiAnswer({ classification: "spam" }), ctx)).toThrow(/classification/);
     expect(() => normaliseAiResult("not json", ctx)).toThrow();
   });
+
+  it("reads about_pricing, and leaves it unknown when the answer has none", () => {
+    expect(normaliseAiResult(aiAnswer({ about_pricing: false }), ctx).about_pricing).toBe(false);
+    expect(normaliseAiResult(aiAnswer({ about_pricing: true }), ctx).about_pricing).toBe(true);
+    expect(normaliseAiResult(aiAnswer({ about_pricing: undefined }), ctx).about_pricing).toBeNull();
+    expect(normaliseAiResult(aiAnswer({ about_pricing: "no" }), ctx).about_pricing).toBeNull();
+  });
 });
 
 describe("subject and requirements", () => {

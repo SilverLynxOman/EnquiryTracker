@@ -14,6 +14,8 @@ For each e-mail you receive, decide what it is and extract the enquiry details. 
 - "follow_up": the message continues an enquiry or job that already exists. Examples: questions and answers about a request, our quotation, rate offers from overseas agents or carriers for a request, booking confirmation, shipper or consignee details, documents, pre-alerts, tracking, arrival notices or payment for one specific job. Set related_candidate_id to the id of the candidate it belongs to (same customer, cargo and route), or to "" when none of the candidates fits.
 - "not_enquiry": not about a specific request or job. Examples: marketing and promotional rate circulars, newsletters, general invoices or statements, trucking or port bulletins, HR and admin, spam, out-of-office replies.
 
+about_pricing: true when the e-mail is about pricing: a rate request, our quotation, a rate offer from an agent or carrier, a revision, negotiation, acceptance or rejection of a price. false when it is purely operational for a running job (bookings, documents, customs, delivery orders, trucking, ETAs, tracking, arrival notices, payments) or not commercial at all.
+
 confidence is your probability (0 to 1) that the classification is right. reason is one short sentence. summary is one plain English sentence a sales coordinator can scan, e.g. "Rate request: 1x40' HC Qingdao to Sohar, paper bag material, ex-works."
 
 ## Extraction (fill in for every classification; use "" when the e-mail does not say)
@@ -41,10 +43,11 @@ const str = { type: "string" } as const;
 export const OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["classification", "confidence", "reason", "summary", "related_candidate_id", "sales_person", "customer", "shipment"],
+  required: ["classification", "confidence", "about_pricing", "reason", "summary", "related_candidate_id", "sales_person", "customer", "shipment"],
   properties: {
     classification: { type: "string", enum: ["new_enquiry", "follow_up", "not_enquiry"] },
     confidence: { type: "number" },
+    about_pricing: { type: "boolean" },
     reason: str,
     summary: str,
     related_candidate_id: str,
@@ -217,6 +220,7 @@ export function normaliseAiResult(raw: unknown, ctx: Pick<MatchContext, "candida
   return {
     classification,
     confidence: Math.round(confidence * 1000) / 1000,
+    about_pricing: typeof r.about_pricing === "boolean" ? r.about_pricing : null,
     reason: text(r.reason, 400) ?? "",
     summary: text(r.summary, 400) ?? "",
     related_candidate_id: candidateId && ctx.candidates.some((x) => x.id === candidateId) ? candidateId : null,

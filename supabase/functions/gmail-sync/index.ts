@@ -3,8 +3,9 @@
 // Called every few minutes by pg_cron (supabase/email_sync_schedule.sql) with the random secret kept in
 // Vault as gmail_sync_secret, and on demand by an editor's "Check mail now" button (their own session
 // token). Deploy with --no-verify-jwt: this function checks both itself.
-// POST {"reclassify": true} instead re-classifies stored e-mails that went to review as "Not classified"
-// (e.g. Claude had no credits) through a Message Batch at half price: the first call submits the batch
+// POST {"reclassify": true} instead re-classifies stored review e-mails that public.email_is_reclassifiable
+// allows ("Not classified" because Claude was unavailable, and unmatched follow-ups from before Claude was
+// asked whether an e-mail is about pricing) through a Message Batch at half price: the first call submits the batch
 // (up to "limit", default 200), later calls collect it once it has ended (usually within an hour). Call it
 // until it reports state "nothing_to_do". {"reclassify": true, "mode": "now"} does it live instead
 // (full price, up to 80 per call).
@@ -122,18 +123,8 @@ function database(admin: SupabaseClient): SyncDb {
       return unwrap(await admin.rpc("ingest_email", { p: payload }), "ingest_email") as { status: string; duplicate?: boolean };
     },
     async unclassified(limit) {
-      return unwrap(
-        await admin
-          .from("email_messages")
-          .select("id, gmail_message_id, gmail_thread_id")
-          .eq("status", "review")
-          .is("enquiry_id", null)
-          .is("draft_id", null)
-          .like("note", "Not classified:%")
-          .order("received_at", { ascending: true })
-          .limit(limit),
-        "email_messages",
-      ) as UnclassifiedEmail[];
+      // The rule for what may be re-classified lives in SQL (public.email_is_reclassifiable).
+      return unwrap(await admin.rpc("reclassify_candidates", { p_limit: limit }), "reclassify_candidates") as UnclassifiedEmail[];
     },
     async reingest(emailId, payload) {
       return unwrap(
@@ -165,16 +156,10 @@ function batchStore(admin: SupabaseClient): BatchDb {
     async stillUnclassified(ids) {
       const open = new Set<string>();
       for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
         const rows = unwrap(
-          await admin
-            .from("email_messages")
-            .select("id")
-            .in("id", ids.slice(i, i + 200))
-            .eq("status", "review")
-            .is("enquiry_id", null)
-            .is("draft_id", null)
-            .like("note", "Not classified:%"),
-          "email_messages",
+          await admin.rpc("reclassify_candidates", { p_limit: chunk.length, p_ids: chunk }),
+          "reclassify_candidates",
         ) as { id: string }[];
         for (const r of rows) open.add(r.id);
       }
