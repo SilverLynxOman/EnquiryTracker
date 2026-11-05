@@ -231,7 +231,7 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { canEdit, isAdmin } = useAuth();
+  const { canEdit, isAdmin, seesAll, profile } = useAuth();
   const queryClient = useQueryClient();
 
   const existing = useQuery({ queryKey: ["enquiry", id], queryFn: () => fetchEnquiry(id!), enabled: !!id });
@@ -271,6 +271,14 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
     setForm(payloadToForm(draftToPayload(draft.data)));
     setLoaded(true);
   }, [draft.data, loaded]);
+
+  // Sales staff see and enter only their own enquiries (the database refuses others): their sales person, fixed.
+  const ownSalesPerson = seesAll ? null : (salesPersons.data?.find((p) => p.id === profile?.sales_person_id) ?? null);
+  const salesPersonOptions = ownSalesPerson ? [ownSalesPerson] : (salesPersons.data ?? []);
+  useEffect(() => {
+    if (id || !ownSalesPerson) return;
+    setForm((prev) => (prev.sales_person_name ? prev : { ...prev, sales_person_name: ownSalesPerson.name }));
+  }, [id, ownSalesPerson]);
 
   function set(key: Key, raw: string) {
     const value = UPPERCASE_FIELDS.includes(key) ? raw.toUpperCase() : raw;
@@ -473,9 +481,14 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
               {input("contact_email", { type: "email", autoComplete: "off" })}
             </Field>
             <Field label="Sales person">
-              <select className={inputClass} value={form.sales_person_name} onChange={(e) => set("sales_person_name", e.target.value)}>
-                <option value="">—</option>
-                {salesPersons.data?.map((p) => (
+              <select
+                className={inputClass}
+                value={form.sales_person_name}
+                onChange={(e) => set("sales_person_name", e.target.value)}
+                title={ownSalesPerson ? "Your enquiries are always yours" : undefined}
+              >
+                {!ownSalesPerson && <option value="">—</option>}
+                {salesPersonOptions.map((p) => (
                   <option key={p.id} value={p.name}>
                     {p.name}
                   </option>

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { useAuth } from "../auth/AuthProvider";
 import { SalespersonTable } from "../components/SalespersonTable";
 import { Alert, Card, Empty, Spinner, Stat } from "../components/ui";
 import { countRegister, fetchFollowUps, fetchPeriodStats, fetchSalespersonSummary } from "../lib/api";
@@ -66,6 +67,7 @@ function FollowUpList({
 }
 
 export default function DashboardPage() {
+  const { seesAll } = useAuth();
   const today = todayIso();
   const monthStart = firstOfMonth(today);
   const since = addDays(today, -30);
@@ -85,7 +87,8 @@ export default function DashboardPage() {
       <StatsRow title={`Today — ${fmtDate(today)}`} stats={todayStats.data} />
       <StatsRow title={`Month to date — ${fmtDate(monthStart)} to ${fmtDate(today)}`} stats={monthStats.data} />
 
-      <TeamVoyageCard today={today} personLinks actions={<PersonPicker />} />
+      {/* Sales staff see only their own enquiries: no links to other people's open quotes. */}
+      <TeamVoyageCard today={today} personLinks={seesAll} actions={seesAll ? <PersonPicker /> : undefined} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <FollowUpList
