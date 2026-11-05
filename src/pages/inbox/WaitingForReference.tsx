@@ -9,6 +9,7 @@ import { dayLabel, decodeEntities, groupByReference, muscatTime, referenceSlip, 
 import { daysBetween } from "../../lib/display";
 import { muscatDate } from "../../lib/emailDrafts";
 import { errorMessage, fmtDateTime } from "../../lib/format";
+import { firstHouseSubject } from "../../lib/houseSubject";
 import type { EmailListItem, EnquiryRow } from "../../lib/types";
 import { FilterTags, FiltersMenu, type SenderFilter } from "./ListToolbar";
 import {
@@ -204,6 +205,18 @@ async function findTypoMatches(ref: string, emails: EmailListItem[]): Promise<{ 
     .sort((a, b) => b.reasons.length - a.reasons.length);
 }
 
+/**
+ * The new-enquiry form for `ref`, filled from its e-mails (oldest first): the day the first one arrived as the
+ * enquiry date, and the first subject in house style for the quantity, ports and trade type.
+ */
+function newEnquiryLink(ref: string, oldestFirst: EmailListItem[]): string {
+  const params = new URLSearchParams({ reference: ref });
+  if (oldestFirst[0]) params.set("date", muscatDate(oldestFirst[0].received_at));
+  const house = firstHouseSubject(oldestFirst.map((m) => m.subject));
+  if (house) params.set("subject", house.subject);
+  return `/enquiries/new?${params}`;
+}
+
 function WaitingPane({
   group,
   today,
@@ -287,7 +300,7 @@ function WaitingPane({
           canEdit && (
             <>
               {/^SL\d{6}$/.test(ref) && (
-                <Link to={`/enquiries/new?reference=${ref}`} className={buttonClass("primary")}>
+                <Link to={newEnquiryLink(ref, messages)} className={buttonClass("primary")}>
                   <Icon name="plus" />
                   Enter {ref} now
                 </Link>
