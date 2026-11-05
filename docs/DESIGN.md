@@ -91,7 +91,7 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 
 ### Navigation
 - **Left:** logo and application name, then Dashboard, Register, Follow-ups, Reports, Inbox and Customers, each with an icon. The active item has 600 weight, violet text and a 2 px violet underline.
-- **Right:** Import (editors only), Export (on the Register page; it exports the filtered view), New enquiry (the one filled primary button), then the avatar menu (account, sign out).
+- **Right:** Import (editors only), Export (on the Register page; it exports the filtered view), New enquiry (the one filled primary button), then the avatar menu (account, *Users and roles* for admins, sign out).
 - **Narrow screens:** labels collapse to icons, and their accessible names stay. Navigation labels show from 1024 px, Import and Export labels from 1280 px. Below 640 px the bar has a 16 px gutter, and on the narrowest phones the navigation icons scroll inside the bar instead of widening the page.
 
 ### Page structure (list pages)
@@ -162,6 +162,14 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 - **Bulk:** the header tick box selects the page; *Select all N* selects the whole tab. *Mark lost…* opens a dialog with one reason (suggestions, free text). After saving, a success alert offers *Undo*; it stays until dismissed.
 - **Sales users** see their own enquiries first (`sp` in the URL overrides it).
 
+### Users page
+- **Where:** `/admin/users`, from the avatar menu (*Users and roles*), for admins only. Anyone else who opens the address gets a short message, and the server refuses them the list (`admin_list_users()`) and every change (Row Level Security).
+- **Header:** no navigation item names this page, so a 48 px strip in place of the tabs does: the page name and the number of logins.
+- **Table:** user (name, *You* on your own row, e-mail; the last sign-in shows under it below 800 px of table width), role, sales person, last signed in ("Today, 09:12", or "Not signed in yet" with the invitation date). The footer explains the roles, what linking does and how to add someone (an invitation from the Supabase dashboard).
+- **Saving:** choosing a role or sales person saves it at once; the select shows a spinner meanwhile and a toast confirms ("Vivek is now an editor."). There is no Save button and no undo: choosing the old value puts it back.
+- **Your own role** is text, not a select: another admin changes it, so the last admin cannot lock everyone out by mistake.
+- **One login per sales person:** options already linked to someone say so ("Vivek — linked to Ahmed"). Choosing one asks first: *Move to …* (primary; unlinks the other logins) or *Link both*. Rows that still share a sales person carry an amber "Also linked to …" line with a warning icon. Inactive sales persons cannot be chosen, but an existing link to one stays visible, marked "(inactive)".
+
 ### Feedback states
 - **Loading:** skeleton rows on first load. On refetch the previous rows stay in place at 60 % opacity, with no layout jump.
 - **Empty:** say why the list is empty and offer the way out: "Clear all filters", or "New enquiry" and "Import Excel" when there is no data at all.
@@ -189,7 +197,7 @@ A sales person's home page (`/`, or `/plan/<sales person>` for anyone's), the te
 | What the database stores (settings, follow-ups, high-fives, team goal) | `supabase/migrations/20261104223949_game_plan.sql` |
 
 - **No money:** these pages show activity only: enquiries, quotes, wins, streaks, follow-ups, high-fives. Profit and sales stay on the managers' dashboard and in Reports.
-- **Who sees what:** a profile linked to a sales person (`profiles.sales_person_id`) lands on their game plan; everyone else on the dashboard, which has the team ship and a "Game plan of" picker. Someone else's plan shows the defaults: personal settings are private (`user_prefs`, Row Level Security).
+- **Who sees what:** a profile linked to a sales person (`profiles.sales_person_id`, set by admins on the Users page) lands on their game plan; everyone else on the dashboard, which has the team ship and a "Game plan of" picker. Someone else's plan shows the defaults: personal settings are private (`user_prefs`, Row Level Security).
 - **Today's game plan:** quotes to send (awaiting quote, the last 30 days, oldest first, six at most), quotes sent today (done), three follow-ups a day (quotes 3–30 days old, freshest first; a followed-up quote rests a week) and one high-five. Quotes tick off by themselves when marked quoted.
 - **Quick-quote streak:** working days in a row on which every enquiry received was quoted by the end of the next working day (Sunday to Thursday). Days still in time neither add nor break it.
 - **Goals and pace:** the default goal is "beat last month" (at least 3 wins, or 10 quotes). The pace marker shows where last month stood after the same number of working days; confirmations bunch up later in a month, so a straight line would call everyone behind in the first week. Within one of the marker counts as on pace.

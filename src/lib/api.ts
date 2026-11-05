@@ -25,11 +25,13 @@ import type {
   NotDuplicatePair,
   PeriodStats,
   PlanEnquiry,
+  Profile,
   SalespersonSummaryRow,
   ShipmentMode,
   Status,
   SyncResult,
   TeamWin,
+  UserAccount,
 } from "./types";
 
 type Page = { data: unknown; error: { message: string } | null };
@@ -69,6 +71,30 @@ export async function fetchProfileNames(): Promise<Map<string, string>> {
     await supabase.from("profiles").select("id, full_name"),
   );
   return new Map(rows.map((r) => [r.id, r.full_name ?? "Unknown user"]));
+}
+
+// --- Users (admins) --------------------------------------------------------
+
+/** Every login with its e-mail address and last sign-in. The function refuses anyone but admins. */
+export async function fetchUsers(): Promise<UserAccount[]> {
+  return unwrap(await supabase.rpc("admin_list_users"));
+}
+
+/**
+ * Changes a login's role or linked sales person. Row Level Security lets only admins update profiles, and for
+ * anyone else the update matches no row instead of failing, hence the check.
+ */
+export async function updateUser(id: string, changes: Partial<Pick<Profile, "role" | "sales_person_id">>): Promise<void> {
+  const rows = unwrap<{ id: string }[]>(await supabase.from("profiles").update(changes).eq("id", id).select("id"));
+  if (!rows.length) throw new Error("Only administrators can change users, and this login may have been removed.");
+}
+
+/** Unlinks every login but `keepUserId` from this sales person. Returns how many were unlinked. */
+export async function unlinkSalesPerson(salesPersonId: string, keepUserId: string): Promise<number> {
+  const rows = unwrap<{ id: string }[]>(
+    await supabase.from("profiles").update({ sales_person_id: null }).eq("sales_person_id", salesPersonId).neq("id", keepUserId).select("id"),
+  );
+  return rows.length;
 }
 
 // --- Customers -------------------------------------------------------------

@@ -14,6 +14,8 @@ interface AuthState {
   /** Signed in from an invite or reset link and has not chosen a password yet. */
   mustSetPassword: boolean;
   passwordSet: () => void;
+  /** Reads the profile again, after an admin changed their own (Users page). The current one stays meanwhile. */
+  refreshProfile: () => void;
   signOut: () => Promise<void>;
 }
 
@@ -24,6 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   /** The user whose profile request has finished. */
   const [profileFor, setProfileFor] = useState<string | null>(null);
+  /** Bumped to read the profile again. */
+  const [profileVersion, setProfileVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [mustSetPassword, setMustSetPassword] = useState(needsPassword);
 
@@ -67,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, profileVersion]);
 
   const value: AuthState = {
     session,
@@ -81,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearNeedsPassword();
       setMustSetPassword(false);
     },
+    refreshProfile: () => setProfileVersion((v) => v + 1),
     signOut: async () => {
       await supabase.auth.signOut();
     },
