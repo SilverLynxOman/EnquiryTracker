@@ -123,7 +123,7 @@ export default function RegisterPage() {
     mutationFn: (row: EnquiryRow) => markQuoted(row.id, today),
     onMutate: () => setActionError(null),
     onSuccess: (_, row) => {
-      for (const key of ["register", "dashboard", "reports", "enquiry", "plan", "voyage"]) queryClient.invalidateQueries({ queryKey: [key] });
+      for (const key of ["register", "dashboard", "reports", "enquiry", "window", "voyage"]) queryClient.invalidateQueries({ queryKey: [key] });
       setNotice(`${row.reference} marked as quoted today.`);
     },
     onError: (e, row) => setActionError(`${row.reference} could not be marked as quoted. ${errorMessage(e)}`),

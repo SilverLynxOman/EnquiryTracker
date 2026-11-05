@@ -46,7 +46,7 @@ export function FollowUpTable({
   onTogglePage: (select: boolean) => void;
   onConfirm: (row: EnquiryRow) => void;
   onMarkLost: (row: EnquiryRow) => void;
-  /** Latest follow-up logged on each row's enquiry, by anyone (follow_ups, shared with the Game plan). */
+  /** Latest follow-up logged on each row's enquiry, by anyone (follow_ups, shared with The Window). */
   lastFollowUp: ReadonlyMap<string, FollowUpRecord>;
   /** Enquiries the signed-in sales person has already chased today. */
   mineToday: ReadonlySet<string>;

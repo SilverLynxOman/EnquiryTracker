@@ -356,13 +356,16 @@ export interface CustomerSuggestion {
   score: number;
 }
 
-// --- Game plan and team voyage (supabase/migrations/20261104223949_game_plan.sql) ----------
+// --- The Window and the team voyage (tables: supabase/migrations/20261104223949_game_plan.sql) ----------
 
-/** Register columns the game plan reads for one sales person. */
-export type PlanEnquiry = Pick<
+/** Register columns The Window (a sales person's home page) reads for one sales person. */
+export type WindowEnquiry = Pick<
   EnquiryRow,
-  "id" | "reference" | "enquiry_date" | "quoted_date" | "confirmed_date" | "status" | "customer_name" | "shipment_mode" | "pol" | "pod"
+  "id" | "reference" | "enquiry_date" | "quoted_date" | "confirmed_date" | "status" | "customer_id" | "customer_name" | "shipment_mode" | "pol" | "pod"
 >;
+
+/** When an enquiry arrived and was quoted, and whose it is: how quickly people quote. */
+export type QuoteTime = Pick<EnquiryRow, "enquiry_date" | "quoted_date" | "sales_person_id">;
 
 /** A confirmed job: one container on the team ship. */
 export type TeamWin = Pick<
@@ -380,30 +383,16 @@ export interface FollowUpRecord extends FollowUpLog {
   sales_person_id: string;
 }
 
-export interface HighFive {
-  id: number;
-  message: string | null;
-  given_on: string;
-  created_at: string;
-  from_sales_person_id: string | null;
-  to_sales_person_id: string;
-  /** The giver's sales person, or their profile when they have none (managers). */
-  sender: { name: string } | null;
-  giver: { full_name: string | null } | null;
-  receiver: { name: string } | null;
-}
-
-export type GoalType = "wins" | "quotes";
-export type Vibe = "sun" | "mint" | "sky" | "peach";
-export type PlanSection = "xp" | "stack" | "bests" | "highFives" | "team";
-
-/** user_prefs.game_plan: the signed-in user's own settings (private to them). */
-export interface GamePlanPrefs {
-  goalType?: GoalType;
-  goals?: Partial<Record<GoalType, number>>;
-  why?: string;
-  vibe?: Vibe;
-  hidden?: PlanSection[];
+/**
+ * The signed-in user's own home page settings, private to them. Stored in user_prefs.game_plan: the column kept the
+ * name of the page The Window replaced, and settings saved by that page are ignored.
+ */
+export interface HomePrefs {
+  /** Their own win window in days, instead of the one suggested from their wins. */
+  windowDays?: number;
+  /** "" for every mode. */
+  mode?: ShipmentMode | "";
+  sort?: "newest" | "customers";
 }
 
 export interface SyncResult {

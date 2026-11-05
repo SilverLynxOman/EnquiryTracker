@@ -8,8 +8,8 @@ import { displayName } from "../lib/display";
 import { addDays, errorMessage, firstOfMonth, fmtDate, fmtMoney, fmtPercent, todayIso } from "../lib/format";
 import { STALE_DAYS, staleQuoteFilters } from "../lib/followUps";
 import type { EnquiryRow, PeriodStats } from "../lib/types";
-import { PersonPicker } from "./gameplan/PersonPicker";
-import { TeamVoyageCard } from "./gameplan/TeamVoyage";
+import { PersonPicker } from "./window/PersonPicker";
+import { TeamVoyageCard } from "./voyage/TeamVoyage";
 
 function StatsRow({ title, stats }: { title: string; stats: PeriodStats | undefined }) {
   return (
@@ -85,7 +85,7 @@ export default function DashboardPage() {
       <StatsRow title={`Today — ${fmtDate(today)}`} stats={todayStats.data} />
       <StatsRow title={`Month to date — ${fmtDate(monthStart)} to ${fmtDate(today)}`} stats={monthStats.data} />
 
-      <TeamVoyageCard today={today} planLinks actions={<PersonPicker />} />
+      <TeamVoyageCard today={today} personLinks actions={<PersonPicker />} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <FollowUpList
