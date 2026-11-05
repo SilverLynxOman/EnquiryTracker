@@ -4,8 +4,8 @@ import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthProvider";
 import { AttachmentLink, shownName } from "../../components/EmailView";
 import { Icon } from "../../components/icons";
-import { Alert, Button, Empty, IconButton, Spinner, StatusBadge, buttonClass, inputClass } from "../../components/ui";
-import { countEmailsByDay, fetchEnquiriesByIds, fetchEnquiryEmails, fetchFollowUpHistory, linkEmail, logFollowUp, searchEmails, undoFollowUp } from "../../lib/api";
+import { Alert, Button, Empty, Spinner, StatusBadge, buttonClass, inputClass } from "../../components/ui";
+import { fetchEnquiriesByIds, fetchEnquiryEmails, fetchFollowUpHistory, linkEmail, logFollowUp, searchEmails, undoFollowUp } from "../../lib/api";
 import {
   dayLabel,
   decodeEntities,
@@ -16,11 +16,11 @@ import {
   senderName,
   type Conversation,
   type ModeFilter,
-  weekDays,
 } from "../../lib/conversations";
 import { initials, shipmentLabel, shortPort, TRADE_LABELS } from "../../lib/display";
+import { DayPicker, FilterTags, FiltersMenu, ViewToggle } from "./ListToolbar";
 import { gmailThreadUrl, muscatDate, splitBody } from "../../lib/emailDrafts";
-import { addDays, errorMessage } from "../../lib/format";
+import { errorMessage } from "../../lib/format";
 import type { EmailMessage, EnquiryRow, ShipmentMode } from "../../lib/types";
 
 /** The most e-mails one day (or one search) loads; a busy day is a few hundred. */
@@ -38,23 +38,11 @@ const MODE_STYLE: Record<ShipmentMode, { tile: string; label: string }> = {
 };
 const NO_MODE = { tile: "bg-mode-other-bg text-mode-other", label: "—" };
 
-const MODE_CHIPS: { key: ModeFilter; label: string; on: string }[] = [
-  { key: "FCL", label: "FCL", on: "bg-mode-fcl-bg text-mode-fcl ring-mode-fcl" },
-  { key: "LCL", label: "LCL", on: "bg-mode-lcl-bg text-mode-lcl ring-mode-lcl" },
-  { key: "AIR", label: "Air", on: "bg-mode-air-bg text-mode-air ring-mode-air" },
-  { key: "OTHER", label: "Other", on: "bg-mode-other-bg text-mode-other ring-mode-other" },
-];
-
 const AVATAR = {
   external: "bg-mode-fcl-bg text-mode-fcl",
   staff: "bg-selected text-primary",
   self: "bg-table-head text-ink-heading",
 };
-
-const chip = (on: boolean, onClass = "bg-selected text-primary ring-primary") =>
-  `inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-meta font-medium ring-1 ring-inset transition-colors duration-150 ${
-    on ? `${onClass} font-semibold` : "bg-surface text-ink-heading ring-line hover:bg-row-hover"
-  }`;
 
 function ModeTile({ mode, size = "md" }: { mode: ShipmentMode | null | undefined; size?: "md" | "lg" }) {
   const m = mode ? MODE_STYLE[mode] : NO_MODE;
@@ -83,93 +71,6 @@ function route(e: EnquiryRow | undefined): string {
   const r = from || to ? `${from || "?"} → ${to || "?"}` : (e.subject ?? "");
   const what = shipmentLabel(e);
   return what ? `${r} · ${what}` : r;
-}
-
-/** Seven day buttons with each day's e-mail count, a week back or forward, and a calendar for older dates. */
-function WeekStrip({ day, today, sender, onPick }: { day: string; today: string; sender: "" | "external" | "staff"; onPick: (day: string) => void }) {
-  const days = weekDays(day, today);
-  const counts = useQuery({
-    queryKey: ["inbox", "day-counts", days[0], sender],
-    queryFn: () => countEmailsByDay("linked", days, sender),
-    placeholderData: keepPreviousData,
-    staleTime: 60_000,
-    refetchInterval: days.includes(today) ? 60_000 : false,
-  });
-  const dateRef = useRef<HTMLInputElement>(null);
-  const first = new Date(`${days[0]}T00:00:00Z`);
-  const last = new Date(`${days.at(-1)}T00:00:00Z`);
-  const month = (d: Date, year: boolean) => d.toLocaleDateString("en-GB", { month: "short", year: year ? "numeric" : undefined, timeZone: "UTC" });
-  const span = first.getUTCMonth() === last.getUTCMonth() ? month(last, true) : `${month(first, false)} – ${month(last, true)}`;
-
-  function openCalendar() {
-    const input = dateRef.current;
-    if (!input) return;
-    try {
-      input.showPicker();
-    } catch {
-      input.focus();
-    }
-  }
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
-        <span>{span}</span>
-        {day !== today && (
-          <button type="button" className="font-semibold text-primary normal-case hover:underline" onClick={() => onPick(today)}>
-            Back to today
-          </button>
-        )}
-      </div>
-      <div className="flex items-center gap-1">
-        <IconButton icon="chevronLeft" label="Previous week" onClick={() => onPick(addDays(day, -7))} />
-        <div role="group" aria-label="Day" className="grid min-w-0 flex-1 grid-cols-7 gap-1">
-          {days.map((d) => {
-            const on = d === day;
-            const n = counts.data?.[d];
-            const weekday = d === today ? "Today" : new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" });
-            return (
-              <button
-                key={d}
-                type="button"
-                aria-pressed={on}
-                aria-label={`${dayLabel(d, today)}: ${n ?? "counting"} e-mails`}
-                onClick={() => onPick(d)}
-                className={`flex min-w-0 flex-col items-center rounded-control py-1 leading-tight transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-primary ${
-                  on ? "bg-lane-mail text-white shadow-sm" : "text-ink hover:bg-row-hover"
-                }`}
-              >
-                <span className={`truncate text-[11px] font-medium ${on ? "text-white" : "text-ink-muted"}`}>{weekday}</span>
-                <span className="text-body font-bold tabular-nums">{Number(d.slice(8))}</span>
-                <span className={`text-[11px] tabular-nums ${on ? "font-semibold text-white" : n ? "font-semibold text-lane-mail" : "text-ink-muted"}`}>
-                  {n == null ? "·" : n}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <IconButton
-          icon="chevronRight"
-          label="Next week"
-          disabled={day >= today}
-          onClick={() => onPick(addDays(day, 7) > today ? today : addDays(day, 7))}
-        />
-        <span className="relative">
-          <IconButton icon="calendar" label="Pick a date" onClick={openCalendar} />
-          <input
-            ref={dateRef}
-            type="date"
-            tabIndex={-1}
-            aria-hidden="true"
-            className="pointer-events-none absolute right-0 bottom-0 size-px opacity-0"
-            value={day}
-            max={today}
-            onChange={(e) => e.target.value && onPick(e.target.value)}
-          />
-        </span>
-      </div>
-    </div>
-  );
 }
 
 /** Follow-up e-mails, one row per enquiry, the selected conversation open beside the list. */
@@ -232,33 +133,13 @@ export function Conversations({ mailbox, onNotice, listView }: { mailbox?: strin
     if (window.innerWidth < 1024) setTimeout(() => paneRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
-  const viewToggle = (
-    <div role="group" aria-label="View" className="inline-flex rounded-control bg-table-head p-0.5 ring-1 ring-inset ring-line">
-      {(
-        [
-          ["threads", "By enquiry"],
-          ["list", "Every e-mail"],
-        ] as const
-      ).map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          aria-pressed={view === key}
-          onClick={() => update({ view: key === "threads" ? "" : key })}
-          className={`h-8 rounded-[6px] px-3 text-meta font-medium transition-colors duration-150 ${
-            view === key ? "bg-surface font-semibold text-ink shadow-sm" : "text-ink-heading hover:text-ink"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-
   if (view === "list")
     return (
       <div className="space-y-3">
-        <div className="flex justify-end">{viewToggle}</div>
+        <div className="flex items-center justify-end gap-2 text-meta text-ink-muted">
+          Every e-mail, newest first
+          <ViewToggle view={view} onChange={(v) => update({ view: v === "threads" ? "" : v })} />
+        </div>
         {listView}
       </div>
     );
@@ -269,65 +150,48 @@ export function Conversations({ mailbox, onNotice, listView }: { mailbox?: strin
     <div className="flex flex-col gap-4 lg:min-h-0 lg:flex-1 lg:flex-row">
       {/* Conversation list */}
       <section aria-label="Conversations" className="flex min-w-0 flex-col overflow-hidden rounded-panel border border-line bg-surface lg:w-[42%] lg:shrink-0">
-        <div className="space-y-3 border-b border-line p-3">
+        {/* One toolbar row, then a slim summary line with the filters in use */}
+        <div className="border-b border-line px-3 pt-3 pb-2">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-title font-bold text-ink">
-                {emails.isLoading
-                  ? "Loading…"
-                  : `${shown.length} enquir${shown.length === 1 ? "y" : "ies"} · ${mailCount} e-mail${mailCount === 1 ? "" : "s"}`}
-              </h2>
-              <p className="text-meta text-ink-muted">
-                {q ? `Matching “${q}”, all dates` : dayLabel(day, today)}
-                {emails.isFetching && !emails.isLoading && " · updating…"}
-              </p>
-            </div>
-            {viewToggle}
+            <label className="relative min-w-48 flex-1">
+              <span className="sr-only">Search e-mails</span>
+              <Icon name="search" className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-muted" />
+              <input
+                type="search"
+                className={`${inputClass} pl-8`}
+                placeholder="Search subject, sender or SL reference"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+              />
+            </label>
+            <DayPicker day={day} today={today} sender={sender} searching={!!q} onPick={(d) => update({ day: d >= today ? "" : d, e: "" })} />
+            <FiltersMenu sender={sender} filesOnly={filesOnly} mode={mode} onChange={(c) => update({ ...c, e: "" })} />
+            <ViewToggle view={view} onChange={(v) => update({ view: v === "threads" ? "" : v })} />
           </div>
-
-          <label className="relative block">
-            <span className="sr-only">Search e-mails</span>
-            <Icon name="search" className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-muted" />
-            <input
-              type="search"
-              className={`${inputClass} pl-8`}
-              placeholder="Search subject, sender or SL reference"
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-            />
-          </label>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button type="button" aria-pressed={sender === "external"} className={chip(sender === "external")} onClick={() => update({ sender: sender === "external" ? "" : "external", e: "" })}>
-              From customers & agents
-            </button>
-            <button type="button" aria-pressed={sender === "staff"} className={chip(sender === "staff")} onClick={() => update({ sender: sender === "staff" ? "" : "staff", e: "" })}>
-              Colleagues
-            </button>
-            <button type="button" aria-pressed={filesOnly} className={chip(filesOnly)} onClick={() => update({ files: filesOnly ? "" : "1", e: "" })}>
-              <Icon name="paperclip" className="size-3.5" />
-              Attachments
-            </button>
-            {MODE_CHIPS.map((m) => (
-              <button key={m.key} type="button" aria-pressed={mode === m.key} className={chip(mode === m.key, m.on)} onClick={() => update({ mode: mode === m.key ? "" : m.key, e: "" })}>
-                {m.label}
-              </button>
-            ))}
-            {filtered && (
-              <button
-                type="button"
-                className="h-8 px-2 text-meta font-medium text-primary hover:underline"
-                onClick={() => {
-                  setTyped("");
-                  update({ q: "", sender: "", mode: "", files: "", e: "" });
-                }}
-              >
-                Clear
-              </button>
-            )}
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
+            <span className="font-semibold text-ink">
+              {emails.isLoading
+                ? "Loading…"
+                : `${shown.length} enquir${shown.length === 1 ? "y" : "ies"} · ${mailCount} e-mail${mailCount === 1 ? "" : "s"}`}
+            </span>
+            {q && <span className="text-ink-muted">matching “{q}”</span>}
+            {emails.isFetching && !emails.isLoading && <span className="text-ink-muted">· updating…</span>}
+            <span className="ml-auto flex items-center gap-1">
+              <FilterTags sender={sender} filesOnly={filesOnly} mode={mode} onChange={(c) => update({ ...c, e: "" })} />
+              {filtered && (
+                <button
+                  type="button"
+                  className="px-1 text-[11px] font-semibold text-primary hover:underline"
+                  onClick={() => {
+                    setTyped("");
+                    update({ q: "", sender: "", mode: "", files: "", e: "" });
+                  }}
+                >
+                  Clear all
+                </button>
+              )}
+            </span>
           </div>
-
-          {!q && <WeekStrip day={day} today={today} sender={sender} onPick={(d) => update({ day: d >= today ? "" : d, e: "" })} />}
         </div>
 
         {emails.error ? (
