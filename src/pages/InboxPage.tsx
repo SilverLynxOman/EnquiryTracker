@@ -22,11 +22,22 @@ import {
   suggestCustomers,
 } from "../lib/api";
 import { fmtDateLong } from "../lib/display";
+import { dayLabel, decodeEntities, muscatTime, rowSubject } from "../lib/conversations";
+import { Conversations } from "./inbox/Conversations";
 import { draftToPayload, muscatDate } from "../lib/emailDrafts";
-import { addDays, errorMessage, fmtDateTime } from "../lib/format";
+import { errorMessage, fmtDateTime } from "../lib/format";
 import type { EmailListItem, EmailStatus, EnquiryDraft, InboxCounts, SyncResult } from "../lib/types";
 
 type Tab = "drafts" | "review" | "awaiting" | "linked" | "ignored";
+
+/** Each tab's colour: `dot` on the plain pill, `on` when it is the open tab, `count` for its number. */
+const LANE: Record<Tab, { dot: string; on: string; count: string }> = {
+  drafts: { dot: "bg-primary", on: "bg-primary text-white", count: "text-primary" },
+  review: { dot: "bg-await-dot", on: "bg-await text-white", count: "text-await" },
+  awaiting: { dot: "bg-lane-wait", on: "bg-lane-wait text-white", count: "text-lane-wait" },
+  linked: { dot: "bg-lane-mail", on: "bg-lane-mail text-white", count: "text-lane-mail" },
+  ignored: { dot: "bg-cancelled-dot", on: "bg-cancelled text-white", count: "text-cancelled" },
+};
 
 const TABS: { key: Tab; label: string; count?: (c: InboxCounts) => number; hint: string }[] = [
   {
@@ -50,7 +61,7 @@ const TABS: { key: Tab; label: string; count?: (c: InboxCounts) => number; hint:
   {
     key: "linked",
     label: "Follow-up e-mails",
-    hint: "Every e-mail added to an existing enquiry, newest first. Search or pick dates to find older ones; click a row to read it.",
+    hint: "E-mails filed to existing enquiries, one conversation per enquiry. Pick a day or search to go back in time.",
   },
   {
     key: "ignored",
@@ -107,8 +118,8 @@ export default function InboxPage() {
   const current = TABS.find((t) => t.key === tab)!;
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line">
-        <nav aria-label="Inbox" className="-mb-px flex flex-wrap">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <nav aria-label="Inbox" className="flex flex-wrap gap-2">
           {TABS.map((t) => {
             const n = t.count && counts.data ? t.count(counts.data) : null;
             const active = t.key === tab;
@@ -121,25 +132,25 @@ export default function InboxPage() {
                   setNotice(null);
                   setParams(t.key === "drafts" ? {} : { tab: t.key }, { replace: true });
                 }}
-                className={`inline-flex h-12 items-center gap-2 border-b-2 px-3 text-body transition-colors duration-150 ${
-                  active ? "border-primary font-semibold text-ink" : "border-transparent font-medium text-ink-heading hover:text-ink"
+                className={`inline-flex h-10 items-center gap-2 rounded-full px-3.5 text-body transition-colors duration-150 ${
+                  active ? `${LANE[t.key].on} font-semibold` : "bg-surface font-medium text-ink ring-1 ring-inset ring-line hover:bg-row-hover"
                 }`}
               >
+                <span aria-hidden="true" className={`size-2 rounded-full ${active ? "bg-white" : LANE[t.key].dot}`} />
                 {t.label}
-                {n != null && (
-                  <span
-                    className={`rounded-full px-1.5 text-meta font-medium tabular-nums ${active ? "bg-selected text-primary" : "bg-table-head text-ink-heading"}`}
-                  >
-                    {n}
-                  </span>
-                )}
+                {n != null && <span className={`font-bold tabular-nums ${active ? "text-white" : LANE[t.key].count}`}>{n}</span>}
               </button>
             );
           })}
         </nav>
-        <div className="ml-auto flex items-center gap-3 pb-1">
+        <div className="ml-auto flex items-center gap-3">
           {mailbox && (
-            <span className="text-meta text-ink-muted">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-meta ${
+                mailbox.last_error ? "bg-await-bg text-await" : "bg-confirmed-bg text-confirmed"
+              }`}
+            >
+              <span aria-hidden="true" className={`size-1.5 rounded-full ${mailbox.last_error ? "bg-await-dot" : "bg-confirmed-dot"}`} />
               {mailbox.email} · {mailbox.last_synced_at ? `last read ${fmtDateTime(mailbox.last_synced_at)}` : "not read yet"}
             </span>
           )}
@@ -175,7 +186,13 @@ export default function InboxPage() {
 
       {tab === "drafts" ? (
         <DraftList mailbox={mailbox?.email} onNotice={setNotice} />
-      ) : tab === "linked" || tab === "ignored" ? (
+      ) : tab === "linked" ? (
+        <Conversations
+          mailbox={mailbox?.email}
+          onNotice={setNotice}
+          listView={<EmailHistory status="linked" mailbox={mailbox?.email} onNotice={setNotice} />}
+        />
+      ) : tab === "ignored" ? (
         <EmailHistory key={tab} status={STATUS_OF_TAB[tab]} mailbox={mailbox?.email} onNotice={setNotice} />
       ) : (
         <EmailList status={STATUS_OF_TAB[tab]} mailbox={mailbox?.email} onNotice={setNotice} />
@@ -454,33 +471,6 @@ function EmailList({ status, mailbox, onNotice }: { status: EmailStatus; mailbox
 // --- Follow-ups and Ignored: the full history as a compact, searchable list -------
 
 const PAGE_SIZE = 50;
-
-/** Oman wall-clock time (UTC+4) of a timestamp, as HH:MM. */
-function muscatTime(ts: string): string {
-  return new Date(new Date(ts).getTime() + 4 * 3600_000).toISOString().slice(11, 16);
-}
-
-function dayLabel(day: string, today: string): string {
-  if (day === today) return "Today";
-  if (day === addDays(today, -1)) return "Yesterday";
-  const weekday = new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" });
-  return `${weekday} ${fmtDateLong(day)}`;
-}
-
-/** Gmail snippets arrive HTML-escaped ("&amp;", "&#39;"). */
-function decodeEntities(s: string): string {
-  if (!s.includes("&")) return s;
-  const el = document.createElement("textarea");
-  el.innerHTML = s;
-  return el.value;
-}
-
-/** The subject for a one-line row: reply/forward prefixes and the reference (shown in its own column) removed. */
-function rowSubject(subject: string | null, reference?: string | null): string {
-  let s = (subject ?? "").replace(/^\s*((re|fw|fwd|aw|r|tr|sv|回复|答复|转发)\s*[:：]\s*)+/i, "");
-  if (reference) s = s.replace(new RegExp(`^\\s*${reference}\\s*(//|[-:|])?\\s*`, "i"), "");
-  return s.trim() || (subject ?? "").trim();
-}
 
 function EmailHistory({ status, mailbox, onNotice }: { status: EmailStatus; mailbox?: string; onNotice: (n: ReactNode) => void }) {
   const [params, setParams] = useSearchParams();
