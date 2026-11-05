@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import type {
   AuditEntry,
   BreakdownDimension,
+  AgentSummary,
   BreakdownRow,
   CustomerSummary,
   CustomerSuggestion,
@@ -24,6 +25,7 @@ import type {
   MonthlyTrendRow,
   NamedRef,
   NotDuplicatePair,
+  PortSummary,
   PeriodStats,
   PlanEnquiry,
   Profile,
@@ -98,7 +100,19 @@ export async function unlinkSalesPerson(salesPersonId: string, keepUserId: strin
   return rows.length;
 }
 
-// --- Customers -------------------------------------------------------------
+// --- Master data: customers, agents, ports ----------------------------------
+
+/** The "not the same" pairs of one list, with the stored column names mapped to a / b. */
+async function fetchPairs(table: string, a: string, b: string): Promise<NotDuplicatePair[]> {
+  const rows = await fetchAllPages<Record<string, string>>((from, to) =>
+    supabase.from(table).select(`${a}, ${b}, created_at`).order("created_at", { ascending: false }).range(from, to),
+  );
+  return rows.map((r) => ({ a: r[a], b: r[b], created_at: r.created_at }));
+}
+
+async function deletePair(table: string, a: string, b: string, pair: Pick<NotDuplicatePair, "a" | "b">): Promise<void> {
+  unwrap(await supabase.from(table).delete().eq(a, pair.a).eq(b, pair.b));
+}
 
 export function fetchCustomerSummaries(): Promise<CustomerSummary[]> {
   return fetchAllPages<CustomerSummary>((from, to) =>
@@ -106,29 +120,80 @@ export function fetchCustomerSummaries(): Promise<CustomerSummary[]> {
   );
 }
 
-export function fetchNotDuplicates(): Promise<NotDuplicatePair[]> {
-  return fetchAllPages<NotDuplicatePair>((from, to) =>
-    supabase.from("customer_not_duplicates").select("customer_a, customer_b, created_at").order("created_at", { ascending: false }).range(from, to),
-  );
-}
+export const fetchCustomerNotDuplicates = () => fetchPairs("customer_not_duplicates", "customer_a", "customer_b");
+export const undoCustomerNotDuplicate = (pair: Pick<NotDuplicatePair, "a" | "b">) =>
+  deletePair("customer_not_duplicates", "customer_a", "customer_b", pair);
 
 /** Marks every pair among the customers as different companies, so they are no longer suggested as duplicates. */
 export async function markCustomersDistinct(ids: string[]): Promise<number> {
   return unwrap(await supabase.rpc("mark_customers_distinct", { p_ids: ids }));
 }
 
-export async function undoNotDuplicate(pair: Pick<NotDuplicatePair, "customer_a" | "customer_b">): Promise<void> {
-  unwrap(await supabase.from("customer_not_duplicates").delete().eq("customer_a", pair.customer_a).eq("customer_b", pair.customer_b));
-}
-
 /** Admin only. Moves everything of `merge` onto `keep`, remembers their names, deletes them; optionally renames `keep`. */
 export async function mergeCustomers(keep: string, merge: string[], name: string | null): Promise<MergeResult> {
-  return unwrap(await supabase.rpc("merge_customers", { p_keep: keep, p_merge: merge, p_name: name }));
+  const r = unwrap<{ name: string; customers: number; enquiries: number }>(
+    await supabase.rpc("merge_customers", { p_keep: keep, p_merge: merge, p_name: name }),
+  );
+  return { name: r.name, merged: r.customers, enquiries: r.enquiries };
 }
 
 /** Renames a customer; the old name stays a former name, so imports and e-mails that use it still match. */
 export async function renameCustomer(id: string, name: string): Promise<void> {
   unwrap(await supabase.rpc("rename_customer", { p_id: id, p_name: name }));
+}
+
+export function fetchAgentSummaries(): Promise<AgentSummary[]> {
+  return fetchAllPages<AgentSummary>((from, to) => supabase.from("agent_summary").select("*").order("name").order("id").range(from, to));
+}
+
+export const fetchAgentNotDuplicates = () => fetchPairs("agent_not_duplicates", "agent_a", "agent_b");
+export const undoAgentNotDuplicate = (pair: Pick<NotDuplicatePair, "a" | "b">) => deletePair("agent_not_duplicates", "agent_a", "agent_b", pair);
+
+export async function markAgentsDistinct(ids: string[]): Promise<number> {
+  return unwrap(await supabase.rpc("mark_agents_distinct", { p_ids: ids }));
+}
+
+/** Admin only, like mergeCustomers. */
+export async function mergeAgents(keep: string, merge: string[], name: string | null): Promise<MergeResult> {
+  return unwrap(await supabase.rpc("merge_agents", { p_keep: keep, p_merge: merge, p_name: name }));
+}
+
+export async function renameAgent(id: string, name: string): Promise<void> {
+  unwrap(await supabase.rpc("rename_agent", { p_id: id, p_name: name }));
+}
+
+/** Every port spelling used as POL or POD, with counts (id is the spelling's name key). */
+export function fetchPortSummaries(): Promise<PortSummary[]> {
+  return fetchAllPages<PortSummary>((from, to) => supabase.from("port_summary").select("*").order("name").order("id").range(from, to));
+}
+
+export const fetchPortNotDuplicates = () => fetchPairs("port_not_duplicates", "key_a", "key_b");
+export const undoPortNotDuplicate = (pair: Pick<NotDuplicatePair, "a" | "b">) => deletePair("port_not_duplicates", "key_a", "key_b", pair);
+
+export async function markPortsDistinct(keys: string[]): Promise<number> {
+  return unwrap(await supabase.rpc("mark_ports_distinct", { p_keys: keys }));
+}
+
+/**
+ * Admin only. Makes `name` the standard name of these spellings (name keys): rewrites POL / POD on the enquiries
+ * and remembers each spelling, so it becomes `name` whenever it is typed or imported again.
+ */
+export async function mergePorts(keys: string[], name: string): Promise<MergeResult> {
+  return unwrap(await supabase.rpc("merge_ports", { p_keys: keys, p_name: name }));
+}
+
+/**
+ * Standard port name for each known spelling (name key): remembered spellings and the standard names themselves.
+ * The import preview uses it so that a known spelling in Excel does not count as a change.
+ */
+export async function fetchPortNameMap(): Promise<Map<string, string>> {
+  const [standard, aliases] = await Promise.all([
+    supabase.from("ports").select("name, name_key").then((r) => unwrap<{ name: string; name_key: string }[]>(r)),
+    supabase.from("port_aliases").select("alias_key, ports(name)").then((r) => unwrap<{ alias_key: string; ports: { name: string } | null }[]>(r)),
+  ]);
+  const map = new Map<string, string>(standard.map((p) => [p.name_key, p.name]));
+  for (const a of aliases) if (a.ports) map.set(a.alias_key, a.ports.name);
+  return map;
 }
 
 // --- Register --------------------------------------------------------------

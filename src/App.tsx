@@ -4,13 +4,15 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { Layout } from "./components/Layout";
 import { Spinner } from "./components/ui";
 import AccountPage from "./pages/AccountPage";
-import CustomersPage from "./pages/CustomersPage";
 import EnquiryFormPage from "./pages/EnquiryFormPage";
 import FollowUpsPage from "./pages/FollowUpsPage";
 import GamePlanRoute from "./pages/gameplan/GamePlanRoute";
 import HomePage from "./pages/HomePage";
 import InboxPage from "./pages/InboxPage";
 import LoginPage from "./pages/LoginPage";
+import { AGENTS, CUSTOMERS, PORTS } from "./pages/masters/kinds";
+import MasterListPage from "./pages/masters/MasterListPage";
+import MastersLayout from "./pages/masters/MastersLayout";
 import RegisterPage from "./pages/RegisterPage";
 import ReportsLayout from "./pages/reports/ReportsLayout";
 
@@ -52,7 +54,12 @@ export default function App() {
         <Route path="enquiries/:id" element={<EnquiryFormPage />} />
         <Route path="follow-ups" element={<FollowUpsPage />} />
         <Route path="inbox" element={<InboxPage />} />
-        <Route path="customers" element={<CustomersPage />} />
+        <Route element={<MastersLayout />}>
+          {/* key: a fresh page (filters, selection) per list */}
+          <Route path="customers" element={<MasterListPage key="customers" kind={CUSTOMERS} />} />
+          <Route path="agents" element={<MasterListPage key="agents" kind={AGENTS} />} />
+          <Route path="ports" element={<MasterListPage key="ports" kind={PORTS} />} />
+        </Route>
         <Route
           path="import"
           element={

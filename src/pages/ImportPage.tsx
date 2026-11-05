@@ -3,8 +3,9 @@ import { useState, type ReactNode } from "react";
 import type { WorkBook } from "xlsx";
 import { useAuth } from "../auth/AuthProvider";
 import { Alert, Button, Card, Empty, Spinner, inputClass } from "../components/ui";
-import { createImportBatch, fetchExistingByReferences, fetchImportBatches, runImportChunk, uploadImportFile } from "../lib/api";
+import { createImportBatch, fetchExistingByReferences, fetchImportBatches, fetchPortNameMap, runImportChunk, uploadImportFile } from "../lib/api";
 import { buildAnalysis, type DiffItem, type ImportAnalysis } from "../lib/excel/diff";
+import { standardPortName } from "../lib/ports";
 import { listRegisterSheets, parseWorkbookSheets, readWorkbook, type ParsedRow, type SheetInfo } from "../lib/excel/register";
 import { errorMessage, fmtDate, fmtDateTime, fmtMoney } from "../lib/format";
 
@@ -65,8 +66,13 @@ export default function ImportPage() {
     try {
       const chosen = sheets.filter((s) => selected.includes(s.name));
       const parsed = parseWorkbookSheets(workbook, chosen);
-      const existing = await fetchExistingByReferences([...new Set(parsed.rows.map((r) => r.reference))]);
-      const next = buildAnalysis(parsed.rows, existing, parsed.skipped, chosen.map((s) => s.name));
+      const [existing, portNames] = await Promise.all([
+        fetchExistingByReferences([...new Set(parsed.rows.map((r) => r.reference))]),
+        fetchPortNameMap(),
+      ]);
+      // Known port spellings become the standard name, as the database does on save, so they are not changes.
+      const rows = parsed.rows.map((r) => ({ ...r, pol: standardPortName(portNames, r.pol), pod: standardPortName(portNames, r.pod) }));
+      const next = buildAnalysis(rows, existing, parsed.skipped, chosen.map((s) => s.name));
       setAnalysis(next);
       setExcluded(new Set());
       setFilter("");

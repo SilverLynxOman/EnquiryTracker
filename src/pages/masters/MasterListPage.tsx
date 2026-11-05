@@ -1,21 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { useAuth } from "../auth/AuthProvider";
-import { Icon } from "../components/icons";
-import { controlBase, SelectBox } from "../components/SelectBox";
-import { Alert, Button, Empty } from "../components/ui";
-import { fetchCustomerSummaries, fetchNotDuplicates, markCustomersDistinct, undoNotDuplicate } from "../lib/api";
-import { findDuplicatePairs, groupDuplicates, pairKey } from "../lib/customerDuplicates";
-import { displayName } from "../lib/display";
-import { errorMessage } from "../lib/format";
-import { nameKey } from "../lib/normalize";
-import type { CustomerSummary, NotDuplicatePair } from "../lib/types";
-import { CustomerTable } from "./customers/CustomerTable";
-import { DuplicateGroups } from "./customers/DuplicateGroups";
-import { MergeDialog } from "./customers/MergeDialog";
-import { RenameDialog } from "./customers/RenameDialog";
-import { Pagination } from "./register/Pagination";
+import { useAuth } from "../../auth/AuthProvider";
+import { Icon } from "../../components/icons";
+import { controlBase, SelectBox } from "../../components/SelectBox";
+import { Alert, Button, Empty } from "../../components/ui";
+import { groupDuplicates, pairKey } from "../../lib/customerDuplicates";
+import { displayName } from "../../lib/display";
+import { errorMessage } from "../../lib/format";
+import { nameKey } from "../../lib/normalize";
+import type { MasterSummary, NotDuplicatePair } from "../../lib/types";
+import { Pagination } from "../register/Pagination";
+import { DuplicateGroups } from "./DuplicateGroups";
+import type { MasterKind } from "./kinds";
+import { MasterTable } from "./MasterTable";
+import { MergeDialog } from "./MergeDialog";
+import { RenameDialog } from "./RenameDialog";
 
 type Tab = "duplicates" | "all";
 
@@ -28,22 +28,23 @@ const MATCH_LEVELS = {
 type MatchLevel = keyof typeof MATCH_LEVELS;
 
 const SORTS = {
-  name: { label: "Name A–Z", compare: (a: CustomerSummary, b: CustomerSummary) => a.name.localeCompare(b.name) },
-  enquiries: { label: "Most enquiries", compare: (a: CustomerSummary, b: CustomerSummary) => b.enquiries - a.enquiries || a.name.localeCompare(b.name) },
+  name: { label: "Name A–Z", compare: (a: MasterSummary, b: MasterSummary) => a.name.localeCompare(b.name) },
+  enquiries: { label: "Most enquiries", compare: (a: MasterSummary, b: MasterSummary) => b.enquiries - a.enquiries || a.name.localeCompare(b.name) },
   recent: {
     label: "Latest enquiry",
-    compare: (a: CustomerSummary, b: CustomerSummary) => (b.last_enquiry ?? "").localeCompare(a.last_enquiry ?? "") || a.name.localeCompare(b.name),
+    compare: (a: MasterSummary, b: MasterSummary) => (b.last_enquiry ?? "").localeCompare(a.last_enquiry ?? "") || a.name.localeCompare(b.name),
   },
 } as const;
 type SortKey = keyof typeof SORTS;
 
-/** Customer name or one of its former names contains the search text (punctuation-insensitive). */
-function matches(c: CustomerSummary, q: string): boolean {
+/** Name or one of its remembered names contains the search text (punctuation-insensitive). */
+function matches(c: MasterSummary, q: string): boolean {
   if (!q) return true;
   return (nameKey(c.name) ?? "").includes(q) || c.aliases.some((a) => a.includes(q));
 }
 
-export default function CustomersPage() {
+/** One master list (customers, agents or port names): possible duplicates and the full list. */
+export default function MasterListPage({ kind }: { kind: MasterKind }) {
   const { canEdit, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -51,13 +52,14 @@ export default function CustomersPage() {
   const level: MatchLevel = (params.get("match") as MatchLevel) in MATCH_LEVELS ? (params.get("match") as MatchLevel) : "likely";
   const sort: SortKey = (params.get("sort") as SortKey) in SORTS ? (params.get("sort") as SortKey) : "name";
   const q = params.get("q") ?? "";
+  const canRename = kind.renameNeedsAdmin ? isAdmin : canEdit;
 
   const [search, setSearch] = useState(q);
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(50);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [merging, setMerging] = useState<CustomerSummary[] | null>(null);
-  const [renaming, setRenaming] = useState<CustomerSummary | null>(null);
+  const [merging, setMerging] = useState<MasterSummary[] | null>(null);
+  const [renaming, setRenaming] = useState<MasterSummary | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const update = (changes: Record<string, string>) => {
@@ -88,49 +90,47 @@ export default function CustomersPage() {
     return () => clearTimeout(t);
   }, [notice]);
 
-  const customers = useQuery({ queryKey: ["customers", "summary"], queryFn: fetchCustomerSummaries });
-  const notDuplicates = useQuery({ queryKey: ["customers", "not-duplicates"], queryFn: fetchNotDuplicates });
+  const summaries = useQuery({ queryKey: [kind.key, "summary"], queryFn: kind.fetchSummaries });
+  const notDuplicates = useQuery({ queryKey: [kind.key, "not-duplicates"], queryFn: kind.fetchNotDuplicates });
 
-  const byId = useMemo(() => new Map((customers.data ?? []).map((c) => [c.id, c])), [customers.data]);
-  const dismissed = useMemo(() => new Set((notDuplicates.data ?? []).map((p) => pairKey(p.customer_a, p.customer_b))), [notDuplicates.data]);
+  const byId = useMemo(() => new Map((summaries.data ?? []).map((c) => [c.id, c])), [summaries.data]);
+  const dismissed = useMemo(() => new Set((notDuplicates.data ?? []).map((p) => pairKey(p.a, p.b))), [notDuplicates.data]);
   const groups = useMemo(() => {
-    if (!customers.data || !notDuplicates.data) return [];
-    const list = customers.data;
-    return groupDuplicates(list, findDuplicatePairs(list, dismissed, MATCH_LEVELS[level].min));
-  }, [customers.data, notDuplicates.data, dismissed, level]);
+    if (!summaries.data || !notDuplicates.data) return [];
+    const list = summaries.data;
+    return groupDuplicates(list, kind.findPairs(list, dismissed, MATCH_LEVELS[level].min));
+  }, [summaries.data, notDuplicates.data, dismissed, level, kind]);
 
   const key = nameKey(q) ?? "";
   const shownGroups = useMemo(() => groups.filter((g) => g.members.some((c) => matches(c, key))), [groups, key]);
-  const shownCustomers = useMemo(
-    () => (customers.data ?? []).filter((c) => matches(c, key)).sort(SORTS[sort].compare),
-    [customers.data, key, sort],
-  );
-  const pageRows = shownCustomers.slice(page * size, (page + 1) * size);
-  const selectedCustomers = [...selected].map((id) => byId.get(id)).filter((c): c is CustomerSummary => !!c);
+  const shownRows = useMemo(() => (summaries.data ?? []).filter((c) => matches(c, key)).sort(SORTS[sort].compare), [summaries.data, key, sort]);
+  const pageRows = shownRows.slice(page * size, (page + 1) * size);
+  const selectedRows = [...selected].map((id) => byId.get(id)).filter((c): c is MasterSummary => !!c);
 
   const distinct = useMutation({
-    mutationFn: (list: CustomerSummary[]) => markCustomersDistinct(list.map((c) => c.id)),
+    mutationFn: (list: MasterSummary[]) => kind.markDistinct(list.map((c) => c.id)),
     onSuccess: (_n, list) => {
-      void queryClient.invalidateQueries({ queryKey: ["customers", "not-duplicates"] });
-      setNotice(`${list.map((c) => displayName(c.name)).join(" and ")} marked as different companies.`);
+      void queryClient.invalidateQueries({ queryKey: [kind.key, "not-duplicates"] });
+      setNotice(`${list.map((c) => displayName(c.name)).join(" and ")} marked as different.`);
     },
   });
   const undo = useMutation({
-    mutationFn: undoNotDuplicate,
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["customers", "not-duplicates"] }),
+    mutationFn: kind.undoNotDuplicate,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: [kind.key, "not-duplicates"] }),
   });
 
-  const loading = customers.isLoading || notDuplicates.isLoading;
-  const loadError = customers.error ?? notDuplicates.error;
+  const loading = summaries.isLoading || notDuplicates.isLoading;
+  const loadError = summaries.error ?? notDuplicates.error;
   const tabs: { key: Tab; label: string; count: number | undefined }[] = [
     { key: "duplicates", label: "Possible duplicates", count: loading ? undefined : shownGroups.length },
-    { key: "all", label: "All customers", count: loading ? undefined : shownCustomers.length },
+    { key: "all", label: `All ${kind.nouns}`, count: loading ? undefined : shownRows.length },
   ];
+  const clearSearch = () => (setSearch(""), update({ q: "" }));
 
   return (
     <div className="space-y-3">
       <div className="flex h-12 items-stretch justify-between gap-4 border-b border-line">
-        <div role="group" aria-label="Customer lists" className="-mb-px flex min-w-0 items-stretch overflow-x-auto">
+        <div role="group" aria-label={`${kind.title} lists`} className="-mb-px flex min-w-0 items-stretch overflow-x-auto">
           {tabs.map((t, i) => {
             const on = t.key === tab;
             return (
@@ -160,22 +160,22 @@ export default function CustomersPage() {
           })}
         </div>
         <div className="hidden shrink-0 items-center text-meta text-ink-muted sm:flex">
-          {customers.data && `${customers.data.length.toLocaleString()} customers`}
+          {summaries.data && `${summaries.data.length.toLocaleString()} ${kind.nouns}`}
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <form role="search" className="relative min-w-56 flex-[1_1_18rem] lg:max-w-md" onSubmit={(e) => (e.preventDefault(), update({ q: search.trim() }))}>
-          <label htmlFor="customer-search" className="sr-only">
-            Search customers
+          <label htmlFor="master-search" className="sr-only">
+            Search {kind.nouns}
           </label>
           <Icon name="search" className="pointer-events-none absolute left-3 top-2.5 size-4 text-ink-muted" />
           <input
-            id="customer-search"
+            id="master-search"
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search customer or former name"
+            placeholder={kind.searchPlaceholder}
             className={`${controlBase} w-full pl-9 pr-3 font-normal placeholder:text-ink-muted [&::-webkit-search-cancel-button]:cursor-pointer`}
           />
         </form>
@@ -204,7 +204,12 @@ export default function CustomersPage() {
             <Button variant="ghost" onClick={() => setSelected(new Set())}>
               Clear
             </Button>
-            <Button variant="secondary" disabled={selected.size < 2} onClick={() => setMerging(selectedCustomers)} title={selected.size < 2 ? "Select at least two customers" : undefined}>
+            <Button
+              variant="secondary"
+              disabled={selected.size < 2}
+              onClick={() => setMerging(selectedRows)}
+              title={selected.size < 2 ? `Select at least two ${kind.nouns}` : undefined}
+            >
               <Icon name="merge" />
               Merge selected…
             </Button>
@@ -213,16 +218,16 @@ export default function CustomersPage() {
       </div>
 
       {tab === "duplicates" && canEdit && !isAdmin && (
-        <Alert kind="info">You can mark names as different companies. Merging customers is for administrators.</Alert>
+        <Alert kind="info">You can mark names as different. Merging {kind.nouns} is for administrators.</Alert>
       )}
       {loadError && (
-        <Alert action={<Button variant="secondary" size="sm" onClick={() => void queryClient.invalidateQueries({ queryKey: ["customers"] })}>Try again</Button>}>
-          Could not load the customers. {errorMessage(loadError)}
+        <Alert action={<Button variant="secondary" size="sm" onClick={() => void queryClient.invalidateQueries({ queryKey: [kind.key] })}>Try again</Button>}>
+          Could not load the {kind.nouns}. {errorMessage(loadError)}
         </Alert>
       )}
-      {distinct.error && <Alert>Could not mark them as different companies. {errorMessage(distinct.error)}</Alert>}
+      {distinct.error && <Alert>Could not mark them as different. {errorMessage(distinct.error)}</Alert>}
 
-      <section className="@container overflow-hidden rounded-panel border border-line bg-surface" aria-busy={loading || customers.isFetching}>
+      <section className="@container overflow-hidden rounded-panel border border-line bg-surface" aria-busy={loading || summaries.isFetching}>
         {loading ? (
           <div className="space-y-3 p-4" aria-hidden="true">
             {Array.from({ length: 8 }, (_, i) => (
@@ -231,40 +236,46 @@ export default function CustomersPage() {
           </div>
         ) : tab === "duplicates" ? (
           shownGroups.length ? (
-            <DuplicateGroups
-              groups={shownGroups}
-              canEdit={canEdit}
-              isAdmin={isAdmin}
-              distinctPending={distinct.isPending}
-              onMerge={setMerging}
-              onDistinct={(list) => distinct.mutate(list)}
-            />
+            <div className="relative overflow-x-auto">
+              <DuplicateGroups
+                kind={kind}
+                groups={shownGroups}
+                canEdit={canEdit}
+                isAdmin={isAdmin}
+                distinctPending={distinct.isPending}
+                onMerge={setMerging}
+                onDistinct={(list) => distinct.mutate(list)}
+              />
+            </div>
           ) : (
-            <Empty action={q && <Button variant="secondary" onClick={() => (setSearch(""), update({ q: "" }))}>Clear search</Button>}>
-              {q ? `No possible duplicates match “${q}”.` : "No possible duplicates. Every customer name is distinct enough."}
+            <Empty action={q && <Button variant="secondary" onClick={clearSearch}>Clear search</Button>}>
+              {q ? `No possible duplicates match “${q}”.` : `No possible duplicates. Every ${kind.noun} name is distinct enough.`}
             </Empty>
           )
-        ) : shownCustomers.length ? (
+        ) : shownRows.length ? (
           <>
-            <CustomerTable
-              rows={pageRows}
-              selected={selected}
-              canEdit={canEdit}
-              isAdmin={isAdmin}
-              onToggle={(id) =>
-                setSelected((prev) => {
-                  const next = new Set(prev);
-                  if (!next.delete(id)) next.add(id);
-                  return next;
-                })
-              }
-              onRename={setRenaming}
-            />
-            <Pagination page={page} size={size} total={shownCustomers.length} onPage={setPage} onSize={(s) => (setSize(s), setPage(0))} />
+            <div className="relative overflow-x-auto">
+              <MasterTable
+                kind={kind}
+                rows={pageRows}
+                selected={selected}
+                canRename={canRename}
+                isAdmin={isAdmin}
+                onToggle={(id) =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    if (!next.delete(id)) next.add(id);
+                    return next;
+                  })
+                }
+                onRename={setRenaming}
+              />
+            </div>
+            <Pagination page={page} size={size} total={shownRows.length} onPage={setPage} onSize={(s) => (setSize(s), setPage(0))} />
           </>
         ) : (
-          <Empty action={q && <Button variant="secondary" onClick={() => (setSearch(""), update({ q: "" }))}>Clear search</Button>}>
-            {q ? `No customers match “${q}”.` : "No customers yet. They are added with enquiries and imports."}
+          <Empty action={q && <Button variant="secondary" onClick={clearSearch}>Clear search</Button>}>
+            {q ? `No ${kind.nouns} match “${q}”.` : `No ${kind.nouns} yet. They are added with enquiries and imports.`}
           </Empty>
         )}
       </section>
@@ -275,20 +286,22 @@ export default function CustomersPage() {
 
       {merging && (
         <MergeDialog
-          customers={merging}
+          kind={kind}
+          rows={merging}
           onClose={() => setMerging(null)}
           onMerged={(r) => {
             setMerging(null);
             setSelected(new Set());
             setNotice(
-              `Merged ${r.customers + 1} customers into ${displayName(r.name)}: ${r.enquiries.toLocaleString()} ${r.enquiries === 1 ? "enquiry" : "enquiries"} moved.`,
+              `Merged ${r.merged + 1} ${kind.nouns} into ${displayName(r.name)}: ${r.enquiries.toLocaleString()} ${r.enquiries === 1 ? "enquiry" : "enquiries"} changed.`,
             );
           }}
         />
       )}
       {renaming && (
         <RenameDialog
-          customer={renaming}
+          kind={kind}
+          row={renaming}
           onClose={() => setRenaming(null)}
           onRenamed={(name) => {
             setRenaming(null);
@@ -309,7 +322,7 @@ export default function CustomersPage() {
   );
 }
 
-/** Pairs marked as different companies, with a way back. */
+/** Pairs marked as different, with a way back. Pairs whose names no longer exist (merged since) are left out. */
 function NotDuplicateList({
   pairs,
   byId,
@@ -318,22 +331,24 @@ function NotDuplicateList({
   onUndo,
 }: {
   pairs: NotDuplicatePair[];
-  byId: Map<string, CustomerSummary>;
+  byId: Map<string, MasterSummary>;
   canEdit: boolean;
   undoing: boolean;
   onUndo: (pair: NotDuplicatePair) => void;
 }) {
+  const shown = pairs.filter((p) => byId.has(p.a) && byId.has(p.b));
+  if (!shown.length) return null;
   return (
     <details className="rounded-panel border border-line bg-surface">
       <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-4 text-body font-medium text-ink-heading hover:text-ink">
         <Icon name="chevronRight" className="size-4 transition-transform duration-150 [details[open]_&]:rotate-90" />
-        Marked as different companies ({pairs.length})
+        Marked as different ({shown.length})
       </summary>
       <ul className="border-t border-line">
-        {pairs.map((p) => (
-          <li key={pairKey(p.customer_a, p.customer_b)} className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2 last:border-b-0">
+        {shown.map((p) => (
+          <li key={pairKey(p.a, p.b)} className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2 last:border-b-0">
             <span>
-              {displayName(byId.get(p.customer_a)?.name)} <span className="text-ink-muted">and</span> {displayName(byId.get(p.customer_b)?.name)}
+              {displayName(byId.get(p.a)?.name)} <span className="text-ink-muted">and</span> {displayName(byId.get(p.b)?.name)}
             </span>
             {canEdit && (
               <Button variant="ghost" size="sm" disabled={undoing} onClick={() => onUndo(p)}>

@@ -13,6 +13,7 @@ import {
   fetchEnquiryEmails,
   fetchInboxCounts,
   fetchNames,
+  fetchPortSummaries,
   fetchProfileNames,
   fetchSalesPersons,
   saveEnquiry,
@@ -237,6 +238,13 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
   const salesPersons = useQuery({ queryKey: ["sales-persons"], queryFn: fetchSalesPersons, staleTime: 300_000 });
   const customers = useQuery({ queryKey: ["names", "customers"], queryFn: () => fetchNames("customers"), staleTime: 300_000 });
   const agents = useQuery({ queryKey: ["names", "agents"], queryFn: () => fetchNames("agents"), staleTime: 300_000 });
+  // Port suggestions, most used first. Known variant spellings are turned into the standard name on save.
+  const ports = useQuery({
+    queryKey: ["ports", "summary"],
+    queryFn: fetchPortSummaries,
+    staleTime: 300_000,
+    select: (rows) => [...rows].sort((a, b) => b.enquiries - a.enquiries).map((p) => p.name),
+  });
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [loaded, setLoaded] = useState(!id && !draftId);
@@ -503,8 +511,13 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
               <Field label="Units">{input("units", { type: "number", min: 0, step: 1 })}</Field>
               <Field label="Container">{input("container_type", { placeholder: "40HC" })}</Field>
             </div>
-            <Field label="POL">{input("pol", { placeholder: "SHANGHAI CHINA" })}</Field>
-            <Field label="POD">{input("pod", { placeholder: "SOHAR OMAN" })}</Field>
+            <Field label="POL">{input("pol", { placeholder: "SHANGHAI CHINA", list: "port-names", autoComplete: "off" })}</Field>
+            <Field label="POD">
+              {input("pod", { placeholder: "SOHAR OMAN", list: "port-names", autoComplete: "off" })}
+              <datalist id="port-names">
+                {ports.data?.map((n) => <option key={n} value={n} />)}
+              </datalist>
+            </Field>
             <Field label="Agent" className="sm:col-span-2">
               {input("agent_name", { list: "agent-names", autoComplete: "off" })}
               <datalist id="agent-names">
@@ -590,8 +603,9 @@ const FIELD_LABELS: Record<string, string> = {
   closure: "Closed as",
   closure_reason: "Reason",
   customer_id: "Customer",
-  // Written by merge_customers: names instead of ids, since the old customer no longer exists.
+  // Written by merge_customers / merge_agents: names instead of ids, since the old one no longer exists.
   customer: "Customer",
+  agent: "Agent",
   subject: "Subject",
   trade_type: "Mode",
   qty_text: "Qty",

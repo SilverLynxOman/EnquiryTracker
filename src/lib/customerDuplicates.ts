@@ -1,24 +1,60 @@
 import { nameKey } from "./normalize";
-import type { CustomerSummary } from "./types";
+import type { MasterSummary } from "./types";
 
-// Duplicate finder for the customer master. It runs in the browser: comparing every pair of a few thousand
-// names takes milliseconds here, while the same self-join in Postgres cannot use a trigram index.
+// Duplicate finder for the master data: customers, agents and port names. It runs in the browser: comparing every
+// pair of a few thousand names takes milliseconds here, while the same self-join in Postgres cannot use a trigram
+// index.
 
 /** Words that never tell two companies apart. */
 const NOISE_WORDS = new Set(["LLC", "CO", "COMPANY", "SPC", "SAOC", "SAOG", "LTD", "LIMITED", "EST", "ESTABLISHMENT", "AND", "THE"]);
+
+/** For agents, trade words are noise too: `BARRIO LOGISTICS` is `BARRIO`, `SHENZHEN WORLD CARGO` is `SHENZHEN WORLD`. */
+export const AGENT_NOISE_WORDS: ReadonlySet<string> = new Set([
+  ...NOISE_WORDS,
+  "LOGISTICS", "LOGISTIC", "SHIPPING", "SHIPING", "FREIGHT", "CARGO", "GLOBAL", "FORWARDING", "FORWARDERS",
+  "INTERNATIONAL", "INTERNATIONA", "INTERNATIO", "INTL",
+]);
 
 /**
  * Comparison key: the name key without legal forms (LLC, CO., SAOC…), "&", brackets and dashes, with a plural S
  * dropped from each word. `GODREJ & KHIMJI` and `Godrej Khimji LLC` both give `GODREJ KHIMJI`.
  */
-export function matchKey(name: string): string {
+export function matchKey(name: string, noise: ReadonlySet<string> = NOISE_WORDS): string {
   const key = (nameKey(name) ?? "").replace(/[&()/+\-]/g, " ").replace(/\bL L C\b/g, " ");
   return key
     .split(/\s+/)
-    .filter((w) => w && !NOISE_WORDS.has(w))
+    .filter((w) => w && !noise.has(w))
     .map((w) => (/[A-Z]{2}S$/.test(w) ? w.slice(0, -1) : w))
     .join(" ");
 }
+
+/** Countries as the register writes them after a port (`SOHAR OMAN`, `DURBAN SOUTH AFRICA`). Longest first. */
+const COUNTRIES = [
+  "UNITED ARAB EMIRATES", "SAUDI ARABIA", "SOUTH AFRICA", "NORTH AFRICA", "SRI LANKA", "SOUTH KOREA", "CZECH REPUBLIC",
+  "NEW ZEALAND", "UAE", "KSA", "OMAN", "INDIA", "CHINA", "PAKISTAN", "QATAR", "KUWAIT", "BAHRAIN", "IRAN", "IRAQ",
+  "JORDAN", "LEBANON", "EGYPT", "TURKEY", "ITALY", "GERMANY", "SPAIN", "FRANCE", "PORTUGAL", "NETHERLANDS", "BELGIUM",
+  "UK", "USA", "CANADA", "BRAZIL", "MEXICO", "VIETNAM", "THAILAND", "MALAYSIA", "SINGAPORE", "INDONESIA", "KOREA",
+  "JAPAN", "TAIWAN", "BANGLADESH", "NEPAL", "MYANMAR", "KENYA", "TANZANIA", "NIGERIA", "MOROCCO", "ALGERIA",
+  "DJIBOUTI", "MAURITIUS", "GREECE", "POLAND", "SWEDEN", "NORWAY", "DENMARK", "FINLAND", "AUSTRIA", "SWITZERLAND",
+  "IRELAND", "RUSSIA", "SLOVENIA", "SLOVAKIA", "SERBIA", "BULGARIA", "LITHUANIA", "AUSTRALIA", "SAUDI", "YEMEN",
+  "SUDAN", "PHILIPPINES", "CAMBODIA", "ROMANIA", "HUNGARY", "UKRAINE", "CROATIA",
+].sort((a, b) => b.length - a.length);
+
+/** A port name split into place and country: `NHAVA-SHEVA INDIA` is NHAVA SHEVA in INDIA. A bare country is both. */
+export function portParts(name: string): { place: string; country: string | null } {
+  const key = (nameKey(name) ?? "").replace(/[&()/+\-]/g, " ").replace(/\s+/g, " ").trim();
+  for (const c of COUNTRIES) {
+    if (key === c) return { place: key, country: c };
+    if (key.endsWith(` ${c}`)) return { place: key.slice(0, -c.length - 1), country: c };
+  }
+  return { place: key, country: null };
+}
+
+/** Comparison key for ports: the place, without the country (`SOHAR OMAN` and `SOHAR` match). */
+export const portMatchKey = (name: string) => portParts(name).place;
+
+/** Ports in two different countries are never the same place (TANJUNG INDONESIA, TANJUNG MALAYSIA). */
+export const portCountry = (name: string) => portParts(name).country;
 
 /** Trigrams as Postgres pg_trgm makes them: lower case, per word, each word padded with two spaces before and one after. */
 export function trigrams(text: string): string[] {
@@ -88,11 +124,20 @@ export const DEFAULT_MIN_SCORE = 0.75;
  * spaces, reaches `minScore`, or when they are one typo apart (TYPO_SCORE). Pairs in `dismissed` (see pairKey) are
  * left out.
  */
+export interface MatchRules {
+  /** Comparison key of a name; default matchKey (company names). */
+  keyOf?: (name: string) => string;
+  /** Names in two different scopes (e.g. countries) are never paired; null means no scope. */
+  scopeOf?: (name: string) => string | null;
+}
+
 export function findDuplicatePairs(
-  customers: Pick<CustomerSummary, "id" | "name">[],
+  customers: Pick<MasterSummary, "id" | "name">[],
   dismissed: ReadonlySet<string> = new Set(),
   minScore = DEFAULT_MIN_SCORE,
+  rules: MatchRules = {},
 ): DuplicatePair[] {
+  const keyOf = rules.keyOf ?? ((n: string) => matchKey(n));
   // Trigrams as sorted numbers: comparing numbers is several times faster than comparing strings.
   const ids = new Map<string, number>();
   const encode = (text: string) =>
@@ -102,9 +147,9 @@ export function findDuplicatePairs(
       return n;
     }).sort();
   const items = customers.map((c) => {
-    const key = matchKey(c.name);
+    const key = keyOf(c.name);
     const flat = key.replace(/ /g, "");
-    return { id: c.id, flat, words: encode(key), joined: encode(flat) };
+    return { id: c.id, flat, scope: rules.scopeOf?.(c.name) ?? null, words: encode(key), joined: encode(flat) };
   });
   const pairs: DuplicatePair[] = [];
   for (let i = 0; i < items.length; i++) {
@@ -113,6 +158,7 @@ export function findDuplicatePairs(
     for (let j = i + 1; j < items.length; j++) {
       const y = items[j];
       if (!y.flat) continue;
+      if (x.scope && y.scope && x.scope !== y.scope) continue;
       let score: number;
       if (x.flat === y.flat) score = 1;
       else {
@@ -146,7 +192,7 @@ export interface DuplicateGroup<T> {
 /**
  * Joins pairs into groups (A~B and B~C give one group A, B, C), sorted by the name of their first member.
  */
-export function groupDuplicates<T extends Pick<CustomerSummary, "id" | "name" | "enquiries">>(
+export function groupDuplicates<T extends Pick<MasterSummary, "id" | "name" | "enquiries">>(
   customers: T[],
   pairs: DuplicatePair[],
 ): DuplicateGroup<T>[] {
@@ -188,6 +234,6 @@ export function groupDuplicates<T extends Pick<CustomerSummary, "id" | "name" | 
 }
 
 /** Most enquiries first; on a tie, the longest (most complete) name. The first is the customer to keep by default. */
-export function keepOrder(x: Pick<CustomerSummary, "name" | "enquiries">, y: Pick<CustomerSummary, "name" | "enquiries">): number {
+export function keepOrder(x: Pick<MasterSummary, "name" | "enquiries">, y: Pick<MasterSummary, "name" | "enquiries">): number {
   return y.enquiries - x.enquiries || y.name.length - x.name.length || x.name.localeCompare(y.name);
 }

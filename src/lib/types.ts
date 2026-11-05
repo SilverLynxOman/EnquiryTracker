@@ -47,34 +47,53 @@ export interface NamedRef {
   name: string;
 }
 
-/** Row of the `customer_summary` view: a customer with its counts. */
-export interface CustomerSummary {
+/** A row of master data (customer, agent or port spelling) with its counts. */
+export interface MasterSummary {
+  /** Customer or agent id; for ports, the spelling's name key. */
   id: string;
   name: string;
-  notes: string | null;
-  created_at: string;
   enquiries: number;
   confirmed: number;
   last_enquiry: string | null;
-  contacts: number;
-  /** Former names (normalised keys) that imports and e-mails map to this customer. */
+  /** Former names / spellings (normalised keys) that imports map to this one. */
   aliases: string[];
+  /** Customers only: contact persons. */
+  contacts?: number;
 }
 
-/** Two customers that staff marked as different companies (customer_a < customer_b). */
-export interface NotDuplicatePair {
-  customer_a: string;
-  customer_b: string;
+/** Row of the `customer_summary` view: a customer with its counts. */
+export interface CustomerSummary extends MasterSummary {
+  notes: string | null;
+  created_at: string;
+  contacts: number;
+}
+
+/** Row of the `agent_summary` view. */
+export interface AgentSummary extends MasterSummary {
+  notes: string | null;
   created_at: string;
 }
 
-/** Result of the `merge_customers` RPC. */
+/** Row of the `port_summary` view: one spelling used as POL or POD (id is its name key). */
+export interface PortSummary extends MasterSummary {
+  as_pol: number;
+  as_pod: number;
+  /** The spelling is a standard port name (ports table). */
+  standard: boolean;
+}
+
+/** Two customers, agents or port spellings that staff marked as different (a < b, as stored). */
+export interface NotDuplicatePair {
+  a: string;
+  b: string;
+  created_at: string;
+}
+
+/** Result of a merge: the kept name, how many were merged into it, and how many enquiries changed. */
 export interface MergeResult {
   name: string;
-  customers: number;
+  merged: number;
   enquiries: number;
-  contacts: number;
-  drafts: number;
 }
 
 export interface Enquiry {
