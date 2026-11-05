@@ -158,7 +158,8 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 
 ### Follow-ups page
 - **Tabs by age:** quoted 14–30 days ago (default), 31–90 days, over 90 days, not quoted. Counts follow the search and sales-person filter, like the status tabs.
-- **Rows:** reference over the quote date, customer over route, sales person, quote amount, waiting days, then *Confirm job* (outline) and the ⋯ menu (Confirm job, Mark lost…, Edit enquiry). Below 860 px of table width, *Confirm job* moves into the menu.
+- **Rows:** reference over the quote date, customer over route, sales person, quote amount, waiting days over the last chase ("Chased 3 days ago", with who in the tooltip), then the row's one next step and the ⋯ menu (Followed up today, Confirm job, Mark lost…, Edit enquiry). Below 860 px of table width, the next step moves into the menu.
+- **Next step by person:** a sales person *chases*: *Followed up* (outline) logs today's follow-up and becomes a pressed "✓ Chased today" (ghost) that undoes it. Anyone else who edits gets *Confirm job*. Enquiries never quoted have no follow-up button.
 - **Bulk:** the header tick box selects the page; *Select all N* selects the whole tab. *Mark lost…* opens a dialog with one reason (suggestions, free text). After saving, a success alert offers *Undo*; it stays until dismissed.
 - **Sales users** see their own enquiries first (`sp` in the URL overrides it).
 

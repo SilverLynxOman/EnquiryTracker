@@ -5,8 +5,8 @@ import { Menu, type MenuItem } from "../../components/Menu";
 import { Button } from "../../components/ui";
 import { displayName, fmtDateLong, shortPort } from "../../lib/display";
 import { fmtMoney } from "../../lib/format";
-import { waitingDays } from "../../lib/followUps";
-import type { EnquiryRow } from "../../lib/types";
+import { chasedLabel, waitingDays } from "../../lib/followUps";
+import type { EnquiryRow, FollowUpRecord } from "../../lib/types";
 
 const th = "sticky top-0 z-10 h-10 border-b border-line bg-table-head px-3 text-left text-meta font-medium whitespace-nowrap text-ink-heading";
 const td = "border-b border-line px-3 py-2 align-middle";
@@ -25,6 +25,12 @@ export function FollowUpTable({
   onTogglePage,
   onConfirm,
   onMarkLost,
+  lastFollowUp,
+  mineToday,
+  personName,
+  canLogFollowUp,
+  followUpSaving,
+  onToggleFollowUp,
   empty,
 }: {
   rows: EnquiryRow[];
@@ -40,6 +46,16 @@ export function FollowUpTable({
   onTogglePage: (select: boolean) => void;
   onConfirm: (row: EnquiryRow) => void;
   onMarkLost: (row: EnquiryRow) => void;
+  /** Latest follow-up logged on each row's enquiry, by anyone (follow_ups, shared with the Game plan). */
+  lastFollowUp: ReadonlyMap<string, FollowUpRecord>;
+  /** Enquiries the signed-in sales person has already chased today. */
+  mineToday: ReadonlySet<string>;
+  personName: (salesPersonId: string) => string;
+  /** The signed-in user is a sales person, so can log follow-ups (only on quotes). */
+  canLogFollowUp: boolean;
+  /** Enquiry whose follow-up is being saved. */
+  followUpSaving: string | null;
+  onToggleFollowUp: (row: EnquiryRow, done: boolean) => void;
   empty: ReactNode;
 }) {
   const allOnPage = rows.length > 0 && rows.every((r) => selected.has(r.id));
@@ -50,7 +66,15 @@ export function FollowUpTable({
   }, [someOnPage, allOnPage]);
 
   const navigate = useNavigate();
+  const chasing = canLogFollowUp && quoted;
   const menu = (r: EnquiryRow): MenuItem[] => [
+    ...(chasing
+      ? [
+          mineToday.has(r.id)
+            ? { label: "Undo today's follow-up", icon: "refresh" as const, onSelect: () => onToggleFollowUp(r, false) }
+            : { label: "Followed up today", icon: "send" as const, onSelect: () => onToggleFollowUp(r, true) },
+        ]
+      : []),
     ...(canEdit && quoted ? [{ label: "Confirm job…", icon: "check" as const, onSelect: () => onConfirm(r) }] : []),
     ...(canEdit ? [{ label: "Mark lost…", icon: "close" as const, onSelect: () => onMarkLost(r) }] : []),
     {
@@ -127,6 +151,8 @@ export function FollowUpTable({
             const on = selected.has(r.id);
             const name = displayName(r.customer_name);
             const days = waitingDays(r, today);
+            const last = lastFollowUp.get(r.id);
+            const chasedToday = mineToday.has(r.id);
             return (
               <tr key={r.id} className={on ? "bg-selected" : "hover:bg-row-hover"}>
                 {canEdit && (
@@ -164,17 +190,42 @@ export function FollowUpTable({
                 </td>
                 <td className={`${td} text-right whitespace-nowrap tabular-nums`}>
                   {days} {days === 1 ? "day" : "days"}
+                  {last && (
+                    <div className="text-meta text-ink-muted" title={`Logged by ${personName(last.sales_person_id)}`}>
+                      {chasedLabel(last.followed_up_on, today)}
+                      <span className="sr-only"> by {personName(last.sales_person_id)}</span>
+                    </div>
+                  )}
                 </td>
                 <td className={`${td} pr-3`}>
                   <div className="flex items-center justify-end gap-1">
-                    {canEdit && quoted && (
-                      // Wrapped: the button's own inline-flex would beat `hidden`. Narrower tables use the menu.
+                    {/* One next step per row: chasing for sales persons, confirming for everyone else who edits.
+                        Wrapped: the button's own inline-flex would beat `hidden`. Narrower tables use the menu. */}
+                    {chasing ? (
                       <span className="hidden @min-[860px]:inline-flex">
-                        <Button variant="secondary" size="sm" onClick={() => onConfirm(r)}>
-                          Confirm job
+                        <Button
+                          variant={chasedToday ? "ghost" : "secondary"}
+                          size="sm"
+                          aria-pressed={chasedToday}
+                          loading={followUpSaving === r.id}
+                          onClick={() => onToggleFollowUp(r, !chasedToday)}
+                          title={chasedToday ? "Logged for today. Click to undo." : "Log that you followed up on this quote today"}
+                        >
+                          {chasedToday && followUpSaving !== r.id && <Icon name="check" className="size-3.5 text-confirmed" />}
+                          {chasedToday ? "Chased today" : "Followed up"}
                           <span className="sr-only"> {r.reference}</span>
                         </Button>
                       </span>
+                    ) : (
+                      canEdit &&
+                      quoted && (
+                        <span className="hidden @min-[860px]:inline-flex">
+                          <Button variant="secondary" size="sm" onClick={() => onConfirm(r)}>
+                            Confirm job
+                            <span className="sr-only"> {r.reference}</span>
+                          </Button>
+                        </span>
+                      )
                     )}
                     <Menu
                       label={`More actions for ${r.reference}`}
