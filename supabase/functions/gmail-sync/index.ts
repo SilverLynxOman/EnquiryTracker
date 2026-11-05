@@ -73,8 +73,10 @@ async function authorise(req: Request, admin: SupabaseClient): Promise<[number, 
 
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) return [401, "Not signed in"];
-  const { data: profile } = await admin.from("profiles").select("role").eq("id", data.user.id).maybeSingle();
-  return profile?.role === "admin" || profile?.role === "editor" ? null : [403, "Only editors can check the mailbox"];
+  const { data: profile } = await admin.from("profiles").select("role, disabled_at").eq("id", data.user.id).maybeSingle();
+  // The same rule as public.can_edit(): owner, admin or editor, with access not turned off.
+  const canEdit = ["owner", "admin", "editor"].includes(profile?.role) && !profile?.disabled_at;
+  return canEdit ? null : [403, "Only editors can check the mailbox"];
 }
 
 function unwrap<T>({ data, error }: { data: T; error: { message: string } | null }, what: string): T {
