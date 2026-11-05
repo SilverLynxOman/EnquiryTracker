@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { normaliseAiResult } from "./ai.ts";
-import { buildDraft, decideWithAi, decideWithoutAi, planWithoutAi } from "./decide.ts";
+import {
+  buildDraft,
+  decideWithAi,
+  decideWithoutAi,
+  OPERATIONS_NOTE,
+  planWithoutAi,
+  PROBABLY_OPERATIONS_NOTE,
+  UNMATCHED_FOLLOW_UP_NOTE,
+  UNMATCHED_PRICING_NOTE,
+} from "./decide.ts";
 import { parseGmailMessage } from "./parse.ts";
 import { aiAnswer, candidate, emptyContext, gmailMessage, type FakeMessage } from "./testFixtures.ts";
 import type { MatchContext } from "./types.ts";
@@ -77,6 +86,18 @@ describe("decideWithAi", () => {
     expect(unsure.decision).toMatchObject({ status: "review", suggested_enquiry_id: candidate().id, enquiry_id: null });
     const unknown = decideWithAi(email(), ctx, ai(ctx, { classification: "follow_up" }), null);
     expect(unknown.decision.status).toBe("review");
+  });
+
+  it("ignores operational follow-ups it cannot tie to an enquiry and keeps pricing ones for review", () => {
+    const ctx = emptyContext({ candidates: [candidate()] });
+    const decide = (o: Record<string, unknown>) => decideWithAi(email(), ctx, ai(ctx, { classification: "follow_up", confidence: 0.9, ...o }), null).decision;
+    expect(decide({ about_pricing: false })).toMatchObject({ status: "ignored", note: OPERATIONS_NOTE, enquiry_id: null });
+    expect(decide({ about_pricing: false, confidence: 0.5 })).toMatchObject({ status: "review", note: PROBABLY_OPERATIONS_NOTE });
+    expect(decide({ about_pricing: true })).toMatchObject({ status: "review", note: UNMATCHED_PRICING_NOTE });
+    // Answers from before the question (e.g. an older batch) keep the re-classifiable note.
+    expect(decide({ about_pricing: undefined })).toMatchObject({ status: "review", note: UNMATCHED_FOLLOW_UP_NOTE });
+    // A follow-up tied to an enquiry is linked whatever it is about.
+    expect(decide({ about_pricing: false, related_candidate_id: candidate().id })).toMatchObject({ status: "linked", enquiry_id: candidate().id });
   });
 
   it("attaches a follow-up of a pending draft to that draft", () => {

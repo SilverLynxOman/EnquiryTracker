@@ -107,6 +107,7 @@ export function aiAnswer(overrides: Record<string, unknown> = {}): Record<string
   return {
     classification: "new_enquiry",
     confidence: 0.92,
+    about_pricing: true,
     reason: "Asks for a rate for a new shipment",
     summary: "Rate request: 1x40' HC Ningbo to Sohar, plastic granules, ex-works.",
     related_candidate_id: "",

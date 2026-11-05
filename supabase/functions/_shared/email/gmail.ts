@@ -12,6 +12,15 @@ export interface GmailCredentials {
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Gmail reports per-user quota and rate limits as 403 as well as 429. */
+const RATE_LIMITED = /rateLimitExceeded|userRateLimitExceeded|quotaExceeded|Quota exceeded|RESOURCE_EXHAUSTED/;
+
+/** True for a Gmail error worth retrying later: rate limits and server errors (not e.g. 404 or 401). */
+export function isTransientGmailError(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : String(e);
+  return /^Gmail .* failed \((429|5\d\d)\)/.test(m) || (/^Gmail .* failed \(403\)/.test(m) && RATE_LIMITED.test(m));
+}
+
 export class GmailApi {
   private token: { value: string; expiresAt: number } | null = null;
   private readonly fetchFn: typeof fetch;
@@ -47,13 +56,15 @@ export class GmailApi {
     for (let attempt = 0; ; attempt++) {
       const res = await this.fetchFn(url, { headers: { Authorization: `Bearer ${await this.accessToken()}` } });
       if (res.ok) return (await res.json()) as T;
-      const retryable = res.status === 429 || res.status >= 500;
-      if (retryable && attempt < 3) {
-        await res.body?.cancel();
-        await sleep(1000 * 2 ** attempt);
+      const text = await res.text();
+      const rateLimited = res.status === 429 || (res.status === 403 && RATE_LIMITED.test(text));
+      if ((rateLimited || res.status >= 500) && attempt < 4) {
+        // A per-minute quota needs a real pause: honour Retry-After, else 2, 4, 8, 16 s (about 30 s in all).
+        const retryAfter = Number(res.headers.get("retry-after"));
+        await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 30) * 1000 : 2000 * 2 ** attempt);
         continue;
       }
-      throw new Error(`Gmail ${path} failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+      throw new Error(`Gmail ${path} failed (${res.status}): ${text.slice(0, 300)}`);
     }
   }
 

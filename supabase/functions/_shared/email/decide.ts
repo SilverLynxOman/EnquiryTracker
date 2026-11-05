@@ -11,6 +11,17 @@ export const DRAFT_LINK_CONFIDENCE = 0.6;
 export const IGNORE_CONFIDENCE = 0.7;
 export const RENEWED_ENQUIRY_CONFIDENCE = 0.7;
 
+/**
+ * Notes for a follow-up Claude could not tie to a candidate. The first is what answers without
+ * about_pricing get (and what every such e-mail got before the field existed); the database treats it
+ * as re-classifiable (public.email_is_reclassifiable), so keep the text in step with that function.
+ * The others are final: re-classifying never picks them up again.
+ */
+export const UNMATCHED_FOLLOW_UP_NOTE = "Looks like a follow-up, but the enquiry could not be identified";
+export const UNMATCHED_PRICING_NOTE = "Pricing follow-up, but the enquiry could not be identified";
+export const OPERATIONS_NOTE = "Operations e-mail – not linked to an enquiry";
+export const PROBABLY_OPERATIONS_NOTE = "Probably an operations e-mail, not about pricing";
+
 /** A deterministic match that Claude is asked to double-check. */
 export interface Recheck {
   enquiry_id: string;
@@ -150,7 +161,14 @@ export function decideWithAi(email: ParsedEmail, ctx: MatchContext, ai: AiResult
           ? out(decision({ ...base, status: "draft", draft_id: candidate.id }))
           : out(decision({ ...base, status: "review", note: "Probably belongs to a pending e-mail enquiry" }));
       }
-      return out(decision({ ...base, status: "review", note: "Looks like a follow-up, but the enquiry could not be identified" }));
+      // Not tied to any enquiry. The mailbox is copied on all operational mail: running jobs that never
+      // were enquiries here are not for review. Pricing follow-ups are, so someone can link them.
+      if (ai.about_pricing === false) {
+        return ai.confidence >= IGNORE_CONFIDENCE
+          ? out(decision({ ...base, status: "ignored", note: OPERATIONS_NOTE }))
+          : out(decision({ ...base, status: "review", note: PROBABLY_OPERATIONS_NOTE }));
+      }
+      return out(decision({ ...base, status: "review", note: ai.about_pricing ? UNMATCHED_PRICING_NOTE : UNMATCHED_FOLLOW_UP_NOTE }));
 
     case "not_enquiry":
       return ai.confidence >= IGNORE_CONFIDENCE

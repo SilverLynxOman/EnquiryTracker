@@ -2,6 +2,7 @@
 // All I/O is injected (SyncDeps) so the run can be tested without Gmail, Claude or a database.
 import { attachmentsForAi, normaliseAiResult, type AiAttachment } from "./ai.ts";
 import { decideWithAi, decideWithoutAi, planWithoutAi } from "./decide.ts";
+import { isTransientGmailError } from "./gmail.ts";
 import { decodeBase64Url, parseGmailMessage, storedBody } from "./parse.ts";
 import type { AttachmentMeta, Decision, GmailMessage, MatchContext, NewDraft, Outcome, ParsedEmail } from "./types.ts";
 
@@ -406,7 +407,14 @@ export async function runReclassifyBatch(
               : decideWithAi(m.email, m.ctx, normaliseAiResult(result.answer, m.ctx), m.plan.recheck);
           count(await finish(m, outcome, r.id));
         } catch (e) {
-          fail(r, e);
+          // A Gmail rate limit or outage is temporary: keep the batch open and file this one next call
+          // from the stored answer, instead of losing an answer that was already paid for.
+          if (isTransientGmailError(e)) {
+            stats.deferred++;
+            if (stats.error_messages.length < 5) stats.error_messages.push(`${r.gmail_message_id}: will retry: ${message(e)}`.slice(0, 300));
+          } else {
+            fail(r, e);
+          }
         }
       }
     });
