@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { Alert, Button, Card, Field, inputClass } from "../components/ui";
 import { supabase } from "../lib/supabase";
+import { ROLE_META } from "../lib/users";
 
 export default function AccountPage() {
   const { session, profile, mustSetPassword, passwordSet } = useAuth();
@@ -15,7 +16,8 @@ export default function AccountPage() {
     if (password.length < 8) return setMessage({ kind: "error", text: "Use at least 8 characters." });
     if (password !== confirm) return setMessage({ kind: "error", text: "The two passwords do not match." });
     setBusy(true);
-    const { error } = await supabase.auth.updateUser({ password });
+    // Also clears the "temporary password" mark the owner's reset leaves (null removes the key).
+    const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: null } });
     setBusy(false);
     if (error) setMessage({ kind: "error", text: error.message });
     else {
@@ -31,7 +33,9 @@ export default function AccountPage() {
       {mustSetPassword && (
         <div className="md:col-span-2">
           <Alert kind="warning">
-            Choose a password now. You are signed in from an e-mail link, and you will need this password to sign in next time.
+            {session?.user.user_metadata?.must_change_password
+              ? "Choose your own password now. You signed in with a temporary password from the owner."
+              : "Choose a password now. You are signed in from an e-mail link, and you will need this password to sign in next time."}
           </Alert>
         </div>
       )}
@@ -47,7 +51,7 @@ export default function AccountPage() {
           </div>
           <div>
             <dt className="text-meta text-ink-muted">Role</dt>
-            <dd className="capitalize">{profile?.role ?? "—"}</dd>
+            <dd>{profile ? ROLE_META[profile.role].label : "—"}</dd>
           </div>
         </dl>
       </Card>

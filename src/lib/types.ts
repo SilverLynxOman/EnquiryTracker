@@ -1,4 +1,4 @@
-export type Role = "admin" | "editor" | "viewer";
+export type Role = "owner" | "admin" | "editor" | "viewer";
 export type Status = "new" | "quoted" | "confirmed" | "lost" | "cancelled";
 export type Closure = "lost" | "cancelled";
 export type TradeType = "IMP" | "EXP" | "CT";
@@ -30,9 +30,11 @@ export interface Profile {
   full_name: string | null;
   role: Role;
   sales_person_id: string | null;
+  /** Set when the owner turned the login's access off: it then has no role anywhere. */
+  disabled_at: string | null;
 }
 
-/** Row of the `admin_list_users` RPC (admins only): a login with its profile. */
+/** Row of the `admin_list_users` RPC (the owner only): a login with its profile, invitation, access and activity. */
 export interface UserAccount extends Profile {
   /** From auth.users; null only for a login without an e-mail address. */
   email: string | null;
@@ -40,6 +42,14 @@ export interface UserAccount extends Profile {
   sales_person_name: string | null;
   last_sign_in_at: string | null;
   created_at: string;
+  /** When an invitation was last sent; null for logins created another way. */
+  invited_at: string | null;
+  /** When the e-mail address was confirmed (invitation accepted); null while an invitation waits. */
+  confirmed_at: string | null;
+  /** The login's latest change in the register (enquiry history). */
+  last_change_at: string | null;
+  /** Changes in the register in the last 7 days. */
+  changes_7d: number;
 }
 
 export interface NamedRef {
@@ -393,10 +403,12 @@ export type WindowEnquiry = Pick<
 export type QuoteTime = Pick<EnquiryRow, "enquiry_date" | "quoted_date" | "sales_person_id">;
 
 /** A confirmed job: one container on the team ship. */
-export type TeamWin = Pick<
-  EnquiryRow,
-  "id" | "reference" | "confirmed_date" | "sales_person_id" | "sales_person_name" | "shipment_mode" | "pol" | "pod"
->;
+/** A confirmed job on the team voyage (public.team_wins): reference and route only for enquiries the reader may see. */
+export type TeamWin = Pick<EnquiryRow, "id" | "confirmed_date" | "sales_person_id" | "sales_person_name" | "shipment_mode"> & {
+  reference: string | null;
+  pol: string | null;
+  pod: string | null;
+};
 
 export interface FollowUpLog {
   enquiry_id: string;

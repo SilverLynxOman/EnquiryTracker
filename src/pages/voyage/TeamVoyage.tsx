@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { useAuth } from "../../auth/AuthProvider";
 import { Icon } from "../../components/icons";
 import { Alert, Button, buttonClass, inputClass, Spinner } from "../../components/ui";
-import { fetchMonthlyTrend, fetchTeamGoal, fetchTeamWins, saveTeamGoal } from "../../lib/api";
+import { fetchTeamConfirmedByMonth, fetchTeamGoal, fetchTeamWins, saveTeamGoal } from "../../lib/api";
 import { errorMessage } from "../../lib/format";
 import { lastOfMonth, monthPeriod } from "../../lib/reports";
 import { crewOf, defaultTeamGoal, teamRecord, type CrewMember } from "../../lib/teamVoyage";
@@ -21,7 +21,8 @@ export function useTeamVoyage(today: string, refetchInterval?: number) {
   const wins = useQuery({ queryKey: ["voyage", "wins", month.from, month.to], queryFn: () => fetchTeamWins(month.from, month.to), refetchInterval });
   const prevWins = useQuery({ queryKey: ["voyage", "wins", prevMonth.from, prevMonth.to], queryFn: () => fetchTeamWins(prevMonth.from, prevMonth.to) });
   const goal = useQuery({ queryKey: ["voyage", "goal", month.from], queryFn: () => fetchTeamGoal(month.from), refetchInterval });
-  const trend = useQuery({ queryKey: ["voyage", "trend", yearBack, prev], queryFn: () => fetchMonthlyTrend(yearBack, lastOfMonth(prev)) });
+  // The whole team's months, also for sales staff (the register shows them only their own enquiries).
+  const trend = useQuery({ queryKey: ["voyage", "trend", yearBack, prev], queryFn: () => fetchTeamConfirmedByMonth(yearBack, lastOfMonth(prev)) });
 
   const lastMonth = trend.data?.find((m) => m.month === prev)?.confirmed ?? 0;
   const loaded = wins.data?.length ?? 0;
@@ -62,7 +63,7 @@ export function shipSlots(wins: TeamWin[], crew: CrewMember[], target: number): 
     return {
       key: w.id,
       colour: member?.colour ?? 0,
-      title: `Container ${i + 1}: ${member?.name ?? "Unassigned"}, ${w.reference}`,
+      title: `Container ${i + 1}: ${member?.name ?? "Unassigned"}${w.reference ? `, ${w.reference}` : ""}`,
     };
   });
 }

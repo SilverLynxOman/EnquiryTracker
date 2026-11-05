@@ -27,6 +27,7 @@ import type {
   PeriodStats,
   Profile,
   QuoteTime,
+  Role,
   SalespersonSummaryRow,
   ShipmentMode,
   Status,
@@ -75,20 +76,49 @@ export async function fetchProfileNames(): Promise<Map<string, string>> {
   return new Map(rows.map((r) => [r.id, r.full_name ?? "Unknown user"]));
 }
 
-// --- Users (admins) --------------------------------------------------------
+// --- Users and access (the owner, in Settings) ---------------------------------
 
-/** Every login with its e-mail address and last sign-in. The function refuses anyone but admins. */
+/** Every login with its e-mail address, sign-in, invitation, access and activity. The function refuses anyone but the owner. */
 export async function fetchUsers(): Promise<UserAccount[]> {
   return unwrap(await supabase.rpc("admin_list_users"));
 }
 
 /**
- * Changes a login's role or linked sales person. Row Level Security lets only admins update profiles, and for
- * anyone else the update matches no row instead of failing, hence the check.
+ * Changes a login's role, linked sales person or name. Row Level Security lets only the owner update profiles, and
+ * for anyone else the update matches no row instead of failing, hence the check.
  */
-export async function updateUser(id: string, changes: Partial<Pick<Profile, "role" | "sales_person_id">>): Promise<void> {
+export async function updateUser(id: string, changes: Partial<Pick<Profile, "role" | "sales_person_id" | "full_name">>): Promise<void> {
   const rows = unwrap<{ id: string }[]>(await supabase.from("profiles").update(changes).eq("id", id).select("id"));
-  if (!rows.length) throw new Error("Only administrators can change users, and this login may have been removed.");
+  if (!rows.length) throw new Error("Only the owner can change users, and this login may have been removed.");
+}
+
+/** How an invitation or reset link reaches the person: Supabase e-mails it, or the app shows it to send yourself. */
+export type LinkDelivery = "email" | "link";
+
+export type UserAdminRequest =
+  | { action: "invite"; email: string; fullName: string; role: Role; salesPersonId: string | null; delivery: LinkDelivery }
+  | { action: "resend_invite" | "reset_password"; userId: string; delivery: LinkDelivery }
+  | { action: "set_password"; userId: string; password: string }
+  | { action: "set_access"; userId: string; enabled: boolean };
+
+/** What the user-admin Edge Function did: a sentence, and the link when one was asked for. */
+export interface UserAdminResult {
+  message: string;
+  link?: string;
+}
+
+/** The owner's actions that need Supabase Auth (supabase/functions/user-admin). Links lead back to this app. */
+export async function userAdmin(request: UserAdminRequest): Promise<UserAdminResult> {
+  const body = { ...request, redirectTo: window.location.origin };
+  const { data, error } = await supabase.functions.invoke<UserAdminResult>("user-admin", { method: "POST", body });
+  if (error) {
+    // The function answers errors as JSON {error}; show that rather than the generic HTTP message.
+    const context = (error as { context?: Response }).context;
+    const reply = context && typeof context.json === "function" ? await context.json().catch(() => null) : null;
+    throw new Error((reply as { error?: string } | null)?.error ?? error.message);
+  }
+  if (!data) throw new Error("No answer from the user-admin function.");
+  return data;
 }
 
 /** Unlinks every login but `keepUserId` from this sales person. Returns how many were unlinked. */
@@ -449,21 +479,18 @@ export function fetchWindowEnquiries(salesPersonId: string, from: string): Promi
   );
 }
 
-const WIN_COLUMNS = "id, reference, confirmed_date, sales_person_id, sales_person_name, shipment_mode, pol, pod";
-
-/** Jobs confirmed in the range, in the order they were confirmed: the containers on the team ship. */
+/**
+ * The team's jobs confirmed in the range, in the order they were confirmed: the containers on the team ship.
+ * Everyone's, also for sales staff (who see only their own enquiries): reference and route come only for the ones
+ * the reader may see.
+ */
 export function fetchTeamWins(from: string, to: string): Promise<TeamWin[]> {
-  return fetchAllPages<TeamWin>((a, b) =>
-    supabase
-      .from("enquiry_register")
-      .select(WIN_COLUMNS)
-      .eq("status", "confirmed")
-      .gte("confirmed_date", from)
-      .lte("confirmed_date", to)
-      .order("confirmed_date")
-      .order("reference")
-      .range(a, b),
-  );
+  return fetchAllPages<TeamWin>((a, b) => supabase.rpc("team_wins", { p_from: from, p_to: to }).range(a, b));
+}
+
+/** Confirmed jobs per month for the whole team ("beat last month" and the record month). */
+export async function fetchTeamConfirmedByMonth(from: string, to: string): Promise<{ month: string; confirmed: number }[]> {
+  return unwrap(await supabase.rpc("team_confirmed_by_month", { p_from: from, p_to: to }));
 }
 
 /** The month's team goal set by an admin, in confirmed jobs; null when none is set. */
@@ -478,18 +505,9 @@ export async function saveTeamGoal(month: string, confirmedJobs: number): Promis
   unwrap(await supabase.from("team_goals").upsert({ month, confirmed_jobs: confirmedJobs, updated_at: new Date().toISOString() }));
 }
 
-/** Every quoted enquiry received since `from`, and whose it is: how quickly each person, and the team, quotes. */
+/** Every quoted enquiry received since `from`, and whose it is: how quickly each person, and the team, quotes (dates only). */
 export function fetchQuoteTimes(from: string): Promise<QuoteTime[]> {
-  return fetchAllPages<QuoteTime>((a, b) =>
-    supabase
-      .from("enquiry_register")
-      .select("enquiry_date, quoted_date, sales_person_id")
-      .gte("enquiry_date", from)
-      .not("quoted_date", "is", null)
-      .order("enquiry_date")
-      .order("id")
-      .range(a, b),
-  );
+  return fetchAllPages<QuoteTime>((a, b) => supabase.rpc("team_quote_times", { p_from: from }).range(a, b));
 }
 
 /** The signed-in user's own home page settings (Row Level Security keeps them private). */
