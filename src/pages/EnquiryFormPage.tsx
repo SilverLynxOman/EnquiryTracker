@@ -243,7 +243,11 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
     select: (rows) => [...rows].sort((a, b) => b.enquiries - a.enquiries).map((p) => p.name),
   });
 
-  const [form, setForm] = useState<FormState>(emptyForm);
+  // ?reference=SL262810 starts a new enquiry under a reference the customer already uses (Inbox, Waiting for reference).
+  const [form, setForm] = useState<FormState>(() => {
+    const ref = !id && !draftId ? (searchParams.get("reference") ?? "").trim().toUpperCase() : "";
+    return /^SL\d{4,}$/.test(ref) ? { ...emptyForm(), reference: ref } : emptyForm();
+  });
   const [loaded, setLoaded] = useState(!id && !draftId);
   const [autoBuy, setAutoBuy] = useState(true);
   const [autoSell, setAutoSell] = useState(true);

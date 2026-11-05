@@ -707,6 +707,38 @@ export async function fetchEnquiriesByIds(ids: string[]): Promise<EnquiryRow[]> 
   return out;
 }
 
+/** Register rows with these references (those that exist). */
+export async function fetchEnquiriesByReferences(references: string[]): Promise<EnquiryRow[]> {
+  if (!references.length) return [];
+  return unwrap(await supabase.from("enquiry_register").select("*").in("reference", references).limit(20));
+}
+
+/** Enquiries this e-mail's Gmail conversation, or its sender, was filed to before: newest first, one entry each. */
+export async function fetchRelatedEnquiryIds(
+  threadId: string,
+  fromEmail: string | null,
+): Promise<{ thread: string[]; sender: { id: string; at: string }[] }> {
+  const [thread, sender] = await Promise.all([
+    supabase.from("email_messages").select("enquiry_id").eq("gmail_thread_id", threadId).not("enquiry_id", "is", null).limit(20),
+    fromEmail
+      ? supabase
+          .from("email_messages")
+          .select("enquiry_id, received_at")
+          .eq("from_email", fromEmail)
+          .not("enquiry_id", "is", null)
+          .order("received_at", { ascending: false })
+          .limit(40)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const threadRows = unwrap<{ enquiry_id: string }[]>(thread);
+  const senderRows = unwrap<{ enquiry_id: string; received_at: string }[]>(sender);
+  const seen = new Set<string>();
+  return {
+    thread: [...new Set(threadRows.map((r) => r.enquiry_id))],
+    sender: senderRows.filter((r) => !seen.has(r.enquiry_id) && seen.add(r.enquiry_id)).map((r) => ({ id: r.enquiry_id, at: r.received_at })),
+  };
+}
+
 export async function fetchEnquiryEmails(enquiryId: string): Promise<EmailMessage[]> {
   return unwrap(
     await supabase.from("email_messages").select(EMAIL_COLUMNS).eq("enquiry_id", enquiryId).order("received_at", { ascending: true }),

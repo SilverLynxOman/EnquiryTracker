@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthProvider";
-import { AttachmentLink, shownName } from "../../components/EmailView";
+import { shownName } from "../../components/EmailView";
 import { Icon } from "../../components/icons";
 import { Alert, Button, Empty, Spinner, StatusBadge, buttonClass, inputClass } from "../../components/ui";
 import { checkMailNow, fetchEmailReplies, fetchEnquiriesByIds, fetchEnquiryEmails, fetchFollowUpHistory, fetchProfileNames, linkEmail, logFollowUp, searchEmails, undoFollowUp } from "../../lib/api";
@@ -17,62 +17,16 @@ import {
   type Conversation,
   type ModeFilter,
 } from "../../lib/conversations";
-import { initials, shipmentLabel, shortPort, TRADE_LABELS } from "../../lib/display";
+import { shipmentLabel, shortPort, TRADE_LABELS } from "../../lib/display";
+import { Avatar, Bubble, ModeTile, route } from "./parts";
 import { DayPicker, FilterTags, FiltersMenu, ViewToggle } from "./ListToolbar";
 import { ReplyBox } from "./ReplyBox";
-import { gmailThreadUrl, muscatDate, splitBody } from "../../lib/emailDrafts";
+import { gmailThreadUrl, muscatDate } from "../../lib/emailDrafts";
 import { errorMessage } from "../../lib/format";
-import type { EmailMessage, EmailReply, EnquiryRow, ShipmentMode } from "../../lib/types";
+import type { EmailMessage, EmailReply, EnquiryRow } from "../../lib/types";
 
 /** The most e-mails one day (or one search) loads; a busy day is a few hundred. */
 const DAY_LIMIT = 500;
-
-const MODE_STYLE: Record<ShipmentMode, { tile: string; label: string }> = {
-  FCL: { tile: "bg-mode-fcl-bg text-mode-fcl", label: "FCL" },
-  LCL: { tile: "bg-mode-lcl-bg text-mode-lcl", label: "LCL" },
-  AIR: { tile: "bg-mode-air-bg text-mode-air", label: "AIR" },
-  COURIER: { tile: "bg-mode-courier-bg text-mode-courier", label: "CRR" },
-  RORO: { tile: "bg-mode-other-bg text-mode-other", label: "RORO" },
-  BREAK_BULK: { tile: "bg-mode-other-bg text-mode-other", label: "BB" },
-  MULTI: { tile: "bg-mode-other-bg text-mode-other", label: "MIX" },
-  OTHER: { tile: "bg-mode-other-bg text-mode-other", label: "OTH" },
-};
-const NO_MODE = { tile: "bg-mode-other-bg text-mode-other", label: "—" };
-
-const AVATAR = {
-  external: "bg-mode-fcl-bg text-mode-fcl",
-  staff: "bg-selected text-primary",
-  self: "bg-table-head text-ink-heading",
-};
-
-function ModeTile({ mode, size = "md" }: { mode: ShipmentMode | null | undefined; size?: "md" | "lg" }) {
-  const m = mode ? MODE_STYLE[mode] : NO_MODE;
-  return (
-    <span
-      aria-hidden="true"
-      className={`inline-flex shrink-0 items-center justify-center rounded-control font-bold ${m.tile} ${size === "lg" ? "size-13 text-meta" : "size-10 text-[11px]"}`}
-    >
-      {m.label}
-    </span>
-  );
-}
-
-function Avatar({ name, type, className = "size-8 text-[11px]" }: { name: string; type: EmailMessage["sender_type"]; className?: string }) {
-  return (
-    <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold ${AVATAR[type]} ${className}`}>
-      {initials(name.replace(/[^\p{L}\p{N}\s]/gu, " "))}
-    </span>
-  );
-}
-
-function route(e: EnquiryRow | undefined): string {
-  if (!e) return "";
-  const from = shortPort(e.pol);
-  const to = shortPort(e.pod);
-  const r = from || to ? `${from || "?"} → ${to || "?"}` : (e.subject ?? "");
-  const what = shipmentLabel(e);
-  return what ? `${r} · ${what}` : r;
-}
 
 /** Follow-up e-mails, one row per enquiry, the selected conversation open beside the list. */
 export function Conversations({ mailbox, onNotice, listView }: { mailbox?: string; onNotice: (n: ReactNode) => void; listView: ReactNode }) {
@@ -459,9 +413,8 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
                 <Bubble
                   email={m}
                   mailbox={mailbox}
-                  canUnlink={canEdit}
                   unlinking={unlink.isPending && unlink.variables === m.id}
-                  onUnlink={() => unlink.mutate(m.id)}
+                  onUnlink={canEdit ? () => unlink.mutate(m.id) : undefined}
                   sentBy={sentBy.get(m.gmail_message_id)}
                   onReply={canEdit ? () => setReply({ target: m, all: false }) : undefined}
                 />
@@ -529,12 +482,6 @@ function ConversationPane({ conv, enquiry, mailbox, onNotice }: { conv: Conversa
   );
 }
 
-const SENDER_TAG = {
-  external: { label: "External", className: "bg-table-head text-ink-heading" },
-  staff: { label: "Colleague", className: "bg-surface text-primary" },
-  self: { label: "Pricing mailbox", className: "bg-surface text-ink-muted" },
-};
-
 /** A reply sent from the app that the mail check has not read back yet. */
 function PendingReply({ reply, by }: { reply: EmailReply; by: string }) {
   const [open, setOpen] = useState(false);
@@ -562,102 +509,6 @@ function PendingReply({ reply, by }: { reply: EmailReply; by: string }) {
           </div>
         )}
         <div className="mt-1 text-[11px] text-ink-muted">Sent through Gmail · filed here after the next mail check</div>
-      </div>
-    </div>
-  );
-}
-
-function Bubble({
-  email,
-  mailbox,
-  canUnlink,
-  unlinking,
-  onUnlink,
-  sentBy,
-  onReply,
-}: {
-  email: EmailMessage;
-  mailbox?: string;
-  canUnlink: boolean;
-  unlinking: boolean;
-  onUnlink: () => void;
-  /** Who sent it from the app, when it was. */
-  sentBy?: string;
-  onReply?: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [quoted, setQuoted] = useState(false);
-  const body = splitBody(email.body_text);
-  const text = decodeEntities(body.text);
-  const earlier = decodeEntities(body.earlier);
-  const long = text.length > 700;
-  const ours = email.sender_type !== "external";
-  const name = senderName(email);
-  const tag = SENDER_TAG[email.sender_type];
-  return (
-    <div className={`flex items-start gap-2.5 ${ours ? "flex-row-reverse" : ""}`}>
-      <Avatar name={name} type={email.sender_type} className="size-9 text-meta" />
-      <div
-        className={`min-w-0 max-w-[85%] rounded-panel border px-3.5 py-2.5 ${
-          ours ? "rounded-tr-sm border-selected bg-selected/70" : "rounded-tl-sm border-line bg-surface"
-        }`}
-      >
-        <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span className="text-meta font-bold text-ink" title={email.from_email ?? undefined}>
-            {name}
-          </span>
-          <span className={`rounded-full px-1.5 text-[11px] font-semibold ${tag.className}`}>{tag.label}</span>
-          {sentBy && <span className="rounded-full bg-surface px-1.5 text-[11px] font-semibold text-primary">sent from the app by {sentBy}</span>}
-          <span className="ml-auto text-meta tabular-nums text-ink-muted">{muscatTime(email.received_at)}</span>
-        </div>
-        {text ? (
-          <div className="text-body whitespace-pre-wrap break-words text-ink">
-            {long && !expanded ? `${text.slice(0, 700)}…` : text}
-            {long && (
-              <button type="button" className="ml-1 text-meta text-primary hover:underline" onClick={() => setExpanded(!expanded)}>
-                {expanded ? "Show less" : "Show all"}
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="text-body text-ink-muted italic">No new text (forward or reply only).</div>
-        )}
-        {email.attachments.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-            {email.attachments.map((a, i) => (
-              <AttachmentLink key={`${a.filename}-${i}`} file={a} />
-            ))}
-          </div>
-        )}
-        {quoted && earlier && (
-          <div className="mt-2 max-h-80 overflow-auto border-l-2 border-line pl-3 text-meta whitespace-pre-wrap break-words text-ink-muted">{earlier}</div>
-        )}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 text-meta">
-          {onReply && (
-            <button type="button" className="font-medium text-primary hover:underline" onClick={onReply}>
-              Reply
-            </button>
-          )}
-          {earlier && (
-            <button type="button" className="text-primary hover:underline" aria-expanded={quoted} onClick={() => setQuoted(!quoted)}>
-              {quoted ? "Hide quoted history" : "Quoted history"}
-            </button>
-          )}
-          <a href={gmailThreadUrl(email.gmail_thread_id, mailbox)} target="_blank" rel="noreferrer" className="text-ink-muted hover:text-primary hover:underline">
-            Gmail
-          </a>
-          {canUnlink && (
-            <button
-              type="button"
-              disabled={unlinking}
-              className="text-ink-muted hover:text-lost hover:underline disabled:opacity-50"
-              title="This e-mail is not about this enquiry: send it back to Needs review"
-              onClick={onUnlink}
-            >
-              {unlinking ? "Unlinking…" : "Wrong enquiry"}
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );

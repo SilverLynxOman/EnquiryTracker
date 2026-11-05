@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Icon } from "../../components/icons";
 import { countEmailsByDay } from "../../lib/api";
+import type { EmailStatus } from "../../lib/types";
 import { dayLabel, monthGrid, type ModeFilter } from "../../lib/conversations";
 import { addDays } from "../../lib/format";
 
@@ -20,18 +21,18 @@ const SENDERS: { key: SenderFilter; label: string }[] = [
   { key: "staff", label: "Colleagues" },
 ];
 
-const chip = (on: boolean, onClass = "bg-selected text-primary ring-primary") =>
+export const chip = (on: boolean, onClass = "bg-selected text-primary ring-primary") =>
   `inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-meta font-medium ring-1 ring-inset transition-colors duration-150 ${
     on ? `${onClass} font-semibold` : "bg-surface text-ink-heading ring-line hover:bg-row-hover"
   }`;
 
-const toolButton = (active: boolean) =>
+export const toolButton = (active: boolean) =>
   `inline-flex h-9 shrink-0 items-center gap-1.5 rounded-control px-2.5 text-control font-medium whitespace-nowrap ring-1 ring-inset transition-colors duration-150 ${
     active ? "bg-lane-mail-bg text-lane-mail ring-lane-mail" : "bg-surface text-ink-heading ring-control hover:bg-row-hover"
   }`;
 
 /** A button with a panel under it that closes on Escape or a click elsewhere. */
-function Popover({
+export function Popover({
   button,
   children,
   label,
@@ -91,6 +92,7 @@ function shiftMonth(month: string, by: number): string {
 
 /** "Today · 333" button that opens a month calendar with each day's follow-up e-mail count. */
 export function DayPicker({
+  status = "linked",
   day,
   today,
   sender,
@@ -102,11 +104,12 @@ export function DayPicker({
   sender: SenderFilter;
   searching: boolean;
   onPick: (day: string) => void;
+  status?: EmailStatus;
 }) {
   const yesterday = addDays(today, -1);
   const quick = useQuery({
-    queryKey: ["inbox", "day-counts", "quick", day, today, sender],
-    queryFn: () => countEmailsByDay("linked", [...new Set([day, today, yesterday])], sender),
+    queryKey: ["inbox", "day-counts", "quick", status, day, today, sender],
+    queryFn: () => countEmailsByDay(status, [...new Set([day, today, yesterday])], sender),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
     refetchInterval: 60_000,
@@ -137,6 +140,7 @@ export function DayPicker({
     >
       {(close) => (
         <MonthCalendar
+          status={status}
           day={day}
           today={today}
           sender={sender}
@@ -152,6 +156,7 @@ export function DayPicker({
 }
 
 function MonthCalendar({
+  status,
   day,
   today,
   sender,
@@ -163,13 +168,14 @@ function MonthCalendar({
   sender: SenderFilter;
   quick?: Record<string, number>;
   onPick: (day: string) => void;
+  status: EmailStatus;
 }) {
   const [month, setMonth] = useState(day.slice(0, 7));
   const cells = monthGrid(month);
   const days = cells.filter((d): d is string => !!d && d <= today);
   const counts = useQuery({
-    queryKey: ["inbox", "day-counts", "month", month, sender],
-    queryFn: () => countEmailsByDay("linked", days, sender),
+    queryKey: ["inbox", "day-counts", "month", status, month, sender],
+    queryFn: () => countEmailsByDay(status, days, sender),
     placeholderData: keepPreviousData,
     staleTime: month === today.slice(0, 7) ? 60_000 : 300_000,
     enabled: days.length > 0,
@@ -246,7 +252,7 @@ function MonthCalendar({
           );
         })}
       </div>
-      <p className="text-[11px] text-ink-muted">Small number: follow-up e-mails that day.</p>
+      <p className="text-[11px] text-ink-muted">Small number: e-mails that day.</p>
     </div>
   );
 }
@@ -258,9 +264,10 @@ export function FiltersMenu({
   mode,
   onChange,
 }: {
-  sender: SenderFilter;
-  filesOnly: boolean;
-  mode: "" | ModeFilter;
+  /** Leave a filter out to hide it. */
+  sender?: SenderFilter;
+  filesOnly?: boolean;
+  mode?: "" | ModeFilter;
   onChange: (changes: Record<string, string>) => void;
 }) {
   const active = (sender ? 1 : 0) + (filesOnly ? 1 : 0) + (mode ? 1 : 0);
@@ -277,6 +284,7 @@ export function FiltersMenu({
     >
       {() => (
         <div className="space-y-3">
+          {sender !== undefined && (
           <fieldset className="space-y-1.5">
             <legend className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">From</legend>
             <div className="flex flex-wrap gap-1.5">
@@ -287,6 +295,8 @@ export function FiltersMenu({
               ))}
             </div>
           </fieldset>
+          )}
+          {mode !== undefined && (
           <fieldset className="space-y-1.5">
             <legend className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Mode</legend>
             <div className="flex flex-wrap gap-1.5">
@@ -297,6 +307,8 @@ export function FiltersMenu({
               ))}
             </div>
           </fieldset>
+          )}
+          {filesOnly !== undefined && (
           <fieldset>
             <legend className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">Attachments</legend>
             <button type="button" aria-pressed={filesOnly} className={chip(filesOnly)} onClick={() => onChange({ files: filesOnly ? "" : "1" })}>
@@ -304,6 +316,7 @@ export function FiltersMenu({
               Only with attachments
             </button>
           </fieldset>
+          )}
           {active > 0 && (
             <div className="border-t border-line pt-2">
               <button type="button" className="text-meta font-medium text-primary hover:underline" onClick={() => onChange({ sender: "", mode: "", files: "" })}>
@@ -324,9 +337,10 @@ export function FilterTags({
   mode,
   onChange,
 }: {
-  sender: SenderFilter;
-  filesOnly: boolean;
-  mode: "" | ModeFilter;
+  /** Leave a filter out to hide it. */
+  sender?: SenderFilter;
+  filesOnly?: boolean;
+  mode?: "" | ModeFilter;
   onChange: (changes: Record<string, string>) => void;
 }) {
   const tags: { key: string; label: string; className: string }[] = [];
@@ -349,10 +363,18 @@ export function FilterTags({
 }
 
 /** Two icon buttons: one row per enquiry, or every e-mail. */
-export function ViewToggle({ view, onChange }: { view: "threads" | "list"; onChange: (view: "threads" | "list") => void }) {
+export function ViewToggle({
+  view,
+  onChange,
+  labels = {},
+}: {
+  view: "threads" | "list";
+  onChange: (view: "threads" | "list") => void;
+  labels?: Partial<Record<"threads" | "list", string>>;
+}) {
   const options = [
-    { key: "threads", label: "By enquiry", icon: "columns" },
-    { key: "list", label: "Every e-mail", icon: "register" },
+    { key: "threads", label: labels.threads ?? "By enquiry", icon: "columns" },
+    { key: "list", label: labels.list ?? "Every e-mail", icon: "register" },
   ] as const;
   return (
     <div role="group" aria-label="View" className="inline-flex shrink-0 overflow-hidden rounded-control ring-1 ring-inset ring-control">
