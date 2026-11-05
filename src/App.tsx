@@ -5,9 +5,10 @@ import { Layout } from "./components/Layout";
 import { Spinner } from "./components/ui";
 import AccountPage from "./pages/AccountPage";
 import CustomersPage from "./pages/CustomersPage";
-import DashboardPage from "./pages/DashboardPage";
 import EnquiryFormPage from "./pages/EnquiryFormPage";
 import FollowUpsPage from "./pages/FollowUpsPage";
+import GamePlanRoute from "./pages/gameplan/GamePlanRoute";
+import HomePage from "./pages/HomePage";
 import InboxPage from "./pages/InboxPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -17,11 +18,23 @@ import ReportsLayout from "./pages/reports/ReportsLayout";
 const ImportPage = lazy(() => import("./pages/ImportPage"));
 const PeriodReportPage = lazy(() => import("./pages/reports/PeriodReportPage"));
 const AnalyticsPage = lazy(() => import("./pages/reports/AnalyticsPage"));
+const TvPage = lazy(() => import("./pages/gameplan/TvPage"));
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* The team voyage for the office screen: signed in, but without the app's navigation. */}
+      <Route
+        path="/tv"
+        element={
+          <RequireAuth>
+            <Suspense fallback={<Spinner />}>
+              <TvPage />
+            </Suspense>
+          </RequireAuth>
+        }
+      />
       <Route
         element={
           <RequireAuth>
@@ -29,7 +42,9 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<DashboardPage />} />
+        <Route index element={<HomePage />} />
+        <Route path="plan" element={<GamePlanRoute />} />
+        <Route path="plan/:salesPersonId" element={<GamePlanRoute />} />
         <Route path="enquiries" element={<RegisterPage />} />
         <Route path="enquiries/new" element={<EnquiryFormPage />} />
         <Route path="enquiries/:id" element={<EnquiryFormPage />} />

@@ -60,6 +60,79 @@
   /* Shape */
   --radius-control: 6px;
   --radius-panel: 10px;
+
+  /*
+   * Game plan and team voyage only (docs/DESIGN.md, "Game plan"). Energy colours and bigger type for the
+   * sales home page, the team ship and the TV view; every other screen keeps the calm palette above.
+   */
+  --text-hero: 2.5rem; /* 40px: the game plan greeting */
+  --text-hero--line-height: 2.875rem;
+  --text-figure: 1.75rem; /* 28px: big numbers in game plan cards */
+  --text-figure--line-height: 2.25rem;
+  --text-tv: 1.375rem; /* 22px: TV view text */
+  --text-tv--line-height: 2rem;
+  --text-tv-figure: 3rem; /* 48px: TV view title and numbers */
+  --text-tv-figure--line-height: 3.5rem;
+
+  /* Greeting banner colours a person can choose; text on them is always ink */
+  --color-vibe-sun: #ffd23f;
+  --color-vibe-mint: #9fe6c6;
+  --color-vibe-sky: #b3dcff;
+  --color-vibe-peach: #ffc4b0;
+  /* Streak flame and pace marker (graphics); flame-ink for text (6.2:1 on white) */
+  --color-flame: #e8452c;
+  --color-flame-soft: #ffe8e2;
+  --color-flame-ink: #b4321c;
+  /* Win-stack containers by shipment mode: white text on each at 4.5:1 or better */
+  --color-mode-fcl: #c2410c;
+  --color-mode-lcl: #5546d9;
+  --color-mode-air: #0369a1;
+  --color-mode-courier: #047857;
+  --color-mode-other: #526075;
+  /* Team-ship containers by sales person, 3:1 or better on the sky; crew-0 is "no sales person" */
+  --color-crew-0: #6b7280;
+  --color-crew-1: #c2410c;
+  --color-crew-2: #0f766e;
+  --color-crew-3: #1d4ed8;
+  --color-crew-4: #a21caf;
+  --color-crew-5: #15803d;
+  --color-crew-6: #b45309;
+  --color-crew-7: #6d28d9;
+  --color-crew-8: #be123c;
+  --color-crew-9: #0e7490;
+  --color-crew-10: #4d7c0f;
+  --color-crew-11: #92400e;
+  --color-crew-12: #334155;
+  /* The team ship illustration */
+  --color-ship-sky: #ffe3c7;
+  --color-ship-sun: #ffa94d;
+  --color-ship-sea: #2a64a6;
+  --color-ship-sea-deep: #1d4e89;
+  --color-ship-wave: #3e73b5;
+  --color-ship-hull: #0b1f3a;
+  --color-ship-boot: #c2412d;
+  --color-ship-cabin: #f8fafc;
+  /* TV view: dark page, white text, muted text at 9:1 */
+  --color-tv-page: #0b1f3a;
+  --color-tv-panel: #142c4d;
+  --color-tv-muted: #c9d6e8;
+
+  /* The ship rocks gently on the TV view (off with reduced motion, like every animation) */
+  --animate-bob: bob 4s ease-in-out infinite;
+  @keyframes bob {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-4px);
+    }
+  }
+}
+
+/* Corrugated container sides on the game plan's win stack and the team ship. */
+@utility stripes {
+  background-image: repeating-linear-gradient(90deg, rgb(0 0 0 / 0.16) 0 2px, transparent 2px 7px);
 }
 
 @layer base {
