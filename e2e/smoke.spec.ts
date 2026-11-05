@@ -34,7 +34,7 @@ test("sign in, add an enquiry, import a workbook", async ({ page }) => {
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /^Today/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Key figures" })).toBeVisible();
     expect(calls.signIns.at(-1)).toEqual({ email: EMAIL, password: PASSWORD });
   });
 
