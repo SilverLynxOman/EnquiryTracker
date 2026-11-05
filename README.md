@@ -254,3 +254,17 @@ npx supabase functions deploy gmail-sync --no-verify-jwt
 Then run `supabase/email_sync_schedule.sql` in the SQL editor (mailbox, Vault secret, 5-minute job; it also has queries to check and stop the job) and add the secrets above. If the deploy asks for Docker, add `--use-api`.
 
 The status line on the Inbox page shows when the mailbox was last read and the last error, if any. Editors can also click **Check mail now**.
+
+### Replying from the app
+
+In **Inbox → Follow-up e-mails**, editors can answer a conversation without leaving the app: **Reply**, **Reply all**, or **Reply** under any single e-mail. The reply box fills in the recipients, keeps the SL reference in the subject and quotes the answered e-mail; files can be attached (about 18 MB in all) and each person can save a signature in their browser. **Send** shows the recipients to confirm, then waits 5 seconds with **Undo** before sending.
+
+The `gmail-send` Edge Function sends the reply through Gmail **as pricing@silverlynxoman.com, in the same Gmail conversation**: it appears in that mailbox's **Sent** folder and the customer sees an ordinary reply. Each reply is recorded in `public.email_replies` with the person who sent it; the conversation shows "sent from the app by …", and the sent e-mail is filed under the enquiry at the next mail check (the app runs one straight after sending).
+
+**Switching it on (once).** The Gmail connection was set up to read only. Until it also may send, **Send** stops with "Sending is not switched on yet" and keeps the draft.
+
+1. [Google Cloud console](https://console.cloud.google.com/), project `enquiry-tracker-mail` → *Google Auth Platform → Data access*: add the scope `https://www.googleapis.com/auth/gmail.send` next to `gmail.readonly`, and save.
+2. Open the [OAuth Playground](https://developers.google.com/oauthplayground). Under ⚙ tick *Use your own OAuth credentials* and paste the same client ID and secret (*Clients → gmail-sync*). In step 1 enter **both** scopes, separated by a space: `https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send`. Click *Authorize APIs*, sign in **as pricing@silverlynxoman.com** and allow *Send email on your behalf*. In step 2 click *Exchange authorization code for tokens* and copy the new **refresh token**.
+3. Supabase dashboard → *Edge Functions → Secrets*: replace `GOOGLE_REFRESH_TOKEN` with the new token. Mail reading carries on with the new token (it includes reading), and replies can be sent straight away.
+
+If Google says the app is blocked, the Workspace admin (Ali) allows it under *Admin console → Security → API controls → App access control*. The table (`20261105200000_email_replies.sql`) and the `gmail-send` function are applied and deployed by GitHub Actions when the change is merged.

@@ -15,3 +15,8 @@ verify_jwt = false
 # Called by the owner from Settings with their session token; the function checks the token and that the caller is
 # an active owner itself (supabase/functions/user-admin/index.ts), like gmail-sync.
 verify_jwt = false
+
+[functions.gmail-send]
+# Called by editors with their session token (Inbox → Reply); the function checks the token, that the caller may
+# edit, and reads the answered e-mail with the caller's token so Row Level Security applies (gmail-send/index.ts).
+verify_jwt = false
