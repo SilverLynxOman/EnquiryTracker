@@ -7,6 +7,8 @@ interface AuthState {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
+  /** Signed in, and the profile (role, sales person) is still being read. */
+  profileLoading: boolean;
   canEdit: boolean;
   isAdmin: boolean;
   /** Signed in from an invite or reset link and has not chosen a password yet. */
@@ -20,6 +22,8 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  /** The user whose profile request has finished. */
+  const [profileFor, setProfileFor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [mustSetPassword, setMustSetPassword] = useState(needsPassword);
 
@@ -56,7 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq("id", userId)
       .maybeSingle()
       .then(({ data }) => {
-        if (!cancelled) setProfile((data as Profile | null) ?? null);
+        if (cancelled) return;
+        setProfile((data as Profile | null) ?? null);
+        setProfileFor(userId);
       });
     return () => {
       cancelled = true;
@@ -67,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     profile,
     loading,
+    profileLoading: userId !== null && profileFor !== userId,
     canEdit: profile?.role === "admin" || profile?.role === "editor",
     isAdmin: profile?.role === "admin",
     mustSetPassword: mustSetPassword && session !== null,

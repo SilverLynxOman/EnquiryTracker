@@ -178,6 +178,30 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 | Dates in Excel exports and reports | `fmtDate()`, the register's house format | 04.11.2026 |
 | FCL shipments | container count with a multiplication sign | 2×20' |
 
+## Game plan and team voyage
+
+A sales person's home page (`/`, or `/plan/<sales person>` for anyone's), the team ship on it and on the managers' dashboard, and the office TV view (`/tv`). These pages are meant to give energy, so they are the one place with brighter colours, bigger type and a little motion. Everywhere else the calm rules above apply.
+
+| What | File |
+|---|---|
+| Every number and rule (missions, streak, XP, goals, records, ship) | `src/lib/gamePlan.ts`, tested in `gamePlan.test.ts` |
+| Pages and cards | `src/pages/gameplan/` (`GamePlanPage`, `TeamVoyage`, `TeamShip`, `TvPage`) |
+| What the database stores (settings, follow-ups, high-fives, team goal) | `supabase/migrations/20261104223949_game_plan.sql` |
+
+- **No money:** these pages show activity only: enquiries, quotes, wins, streaks, follow-ups, high-fives. Profit and sales stay on the managers' dashboard and in Reports.
+- **Who sees what:** a profile linked to a sales person (`profiles.sales_person_id`) lands on their game plan; everyone else on the dashboard, which has the team ship and a "Game plan of" picker. Someone else's plan shows the defaults: personal settings are private (`user_prefs`, Row Level Security).
+- **Today's game plan:** quotes to send (awaiting quote, the last 30 days, oldest first, six at most), quotes sent today (done), three follow-ups a day (quotes 3–30 days old, freshest first; a followed-up quote rests a week) and one high-five. Quotes tick off by themselves when marked quoted.
+- **Quick-quote streak:** working days in a row on which every enquiry received was quoted by the end of the next working day (Sunday to Thursday). Days still in time neither add nor break it.
+- **Goals and pace:** the default goal is "beat last month" (at least 3 wins, or 10 quotes). The pace marker shows where last month stood after the same number of working days; confirmations bunch up later in a month, so a straight line would call everyone behind in the first week. Within one of the marker counts as on pace.
+- **XP and levels:** 10 XP a quote, 10 more when it is quick, 50 a confirmed job, 5 a follow-up or high-five given. A season is a calendar year; levels start at 0, 500, 1,500, 3,000 XP and so on, with ranks from Cadet to Admiral. Anyone can hide XP.
+- **Team ship:** one container per job confirmed this month, coloured by sales person in the order of their first win (so colours never move). The goal is the admin's (Set goal), or "beat last month".
+
+**Tokens** (only on these pages): `vibe-sun`, `vibe-mint`, `vibe-sky`, `vibe-peach` for the greeting banner, which always carries `ink` text (`ink-muted` falls below 4.5:1 on them, so don't use it there); `flame` / `flame-soft` / `flame-ink` for the streak; `mode-*` for win-stack containers (white text on each); `crew-0` … `crew-12` for the ship's containers; `ship-*` for the illustration; `tv-page`, `tv-panel`, `tv-muted` for the TV view; `text-hero`, `text-figure`, `text-tv`, `text-tv-figure`; the `stripes` utility for corrugated container sides.
+
+- **Motion:** the next empty container pulses, and the ship rocks gently on the TV view only. `prefers-reduced-motion` stops both.
+- **TV view:** fits a 1920 × 1080 screen without scrolling, refreshes itself every two minutes and has no navigation. It needs a signed-in account (a viewer is enough).
+- **The ship is one SVG** with a summary for screen readers ("12 of 162 containers loaded: Vivek 4, …"); hovering a container names its sales person and enquiry.
+
 ## Accessibility
 
 - **Real controls:** use real `<button>`, `<a>`, `<label>` and `<select>` elements. Icon-only buttons get an `aria-label`. `Field` wraps its one control in a `<label>`, so the field caption is the control's accessible name; a link that shows only a number gets an `aria-label` that says what it counts.

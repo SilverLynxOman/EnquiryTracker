@@ -130,6 +130,8 @@ export default function ImportPage() {
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["reports"] });
+      queryClient.invalidateQueries({ queryKey: ["plan"] });
+      queryClient.invalidateQueries({ queryKey: ["voyage"] });
       queryClient.invalidateQueries({ queryKey: ["names"] });
       queryClient.invalidateQueries({ queryKey: ["sales-persons"] });
     }

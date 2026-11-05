@@ -299,6 +299,8 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["reports"] });
+      queryClient.invalidateQueries({ queryKey: ["plan"] });
+      queryClient.invalidateQueries({ queryKey: ["voyage"] });
       queryClient.invalidateQueries({ queryKey: ["names"] });
       queryClient.invalidateQueries({ queryKey: ["sales-persons"] });
       queryClient.invalidateQueries({ queryKey: ["audit", row.id] });
@@ -318,6 +320,8 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
       queryClient.invalidateQueries({ queryKey: ["register"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["reports"] });
+      queryClient.invalidateQueries({ queryKey: ["plan"] });
+      queryClient.invalidateQueries({ queryKey: ["voyage"] });
       navigate("/enquiries", { replace: true });
     },
   });

@@ -346,6 +346,51 @@ export interface CustomerSuggestion {
   score: number;
 }
 
+// --- Game plan and team voyage (supabase/migrations/20261104223949_game_plan.sql) ----------
+
+/** Register columns the game plan reads for one sales person. */
+export type PlanEnquiry = Pick<
+  EnquiryRow,
+  "id" | "reference" | "enquiry_date" | "quoted_date" | "confirmed_date" | "status" | "customer_name" | "shipment_mode" | "pol" | "pod"
+>;
+
+/** A confirmed job: one container on the team ship. */
+export type TeamWin = Pick<
+  EnquiryRow,
+  "id" | "reference" | "confirmed_date" | "sales_person_id" | "sales_person_name" | "shipment_mode" | "pol" | "pod"
+>;
+
+export interface FollowUpLog {
+  enquiry_id: string;
+  followed_up_on: string;
+}
+
+export interface HighFive {
+  id: number;
+  message: string | null;
+  given_on: string;
+  created_at: string;
+  from_sales_person_id: string | null;
+  to_sales_person_id: string;
+  /** The giver's sales person, or their profile when they have none (managers). */
+  sender: { name: string } | null;
+  giver: { full_name: string | null } | null;
+  receiver: { name: string } | null;
+}
+
+export type GoalType = "wins" | "quotes";
+export type Vibe = "sun" | "mint" | "sky" | "peach";
+export type PlanSection = "xp" | "stack" | "bests" | "highFives" | "team";
+
+/** user_prefs.game_plan: the signed-in user's own settings (private to them). */
+export interface GamePlanPrefs {
+  goalType?: GoalType;
+  goals?: Partial<Record<GoalType, number>>;
+  why?: string;
+  vibe?: Vibe;
+  hidden?: PlanSection[];
+}
+
 export interface SyncResult {
   skipped?: string;
   error?: string;

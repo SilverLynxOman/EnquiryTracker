@@ -14,7 +14,9 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 
 | Screen | |
 |---|---|
-| Dashboard | Today / month-to-date enquiries, quotes, confirmations, conversion, profit; follow-up lists; per-sales-person table (the weekly `DATA` sheet) |
+| Game plan | Home page of every user linked to a sales person: today's missions (quotes to send, quotes to follow up, a high-five), the quick-quote streak, a monthly goal paced against last month, personal records, high-fives and the team ship. No money on it. Anyone's plan opens at `/plan/<sales person>` (see [docs/DESIGN.md](docs/DESIGN.md#game-plan-and-team-voyage)) |
+| Team voyage and TV view | One container per job confirmed this month on a ship, against the team goal (admins set it; otherwise "beat last month"). `/tv` shows it full screen for the office, refreshing every two minutes |
+| Dashboard | For managers (users not linked to a sales person): today / month-to-date enquiries, quotes, confirmations, conversion, profit; the team ship; follow-up lists; per-sales-person table (the weekly `DATA` sheet) |
 | Register | Status tabs with live counts; search; date basis and period presets, sales person, shipment; one next step per row (*Mark quoted*, *Confirm job*, *View details*); details drawer; column chooser; export of the filtered view to Excel in the register layout |
 | New / edit enquiry | Auto reference (`SL` + YY + running number), qty parser, auto totals and profit, lost/cancelled, change history |
 | Import Excel | Upload the daily report or monthly workbook. Preview new / changed / unchanged / invalid rows, then import. The original file is archived |
@@ -105,6 +107,14 @@ In the Supabase dashboard:
    ```
 
    Roles: `admin` (everything, including delete), `editor` (add / edit / import), `viewer` (read-only, the default).
+5. Link each sales person's login to their name in the register, so the game plan becomes their home page (one line per person):
+
+   ```sql
+   update public.profiles set sales_person_id = (select id from public.sales_persons where name = 'VIVEK')
+   where id = (select id from auth.users where email = 'vivek@silverlynxoman.com');
+   ```
+
+   Users without a link (managers, pricing) keep the dashboard.
 
 ### 3. Run locally
 
