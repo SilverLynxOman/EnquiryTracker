@@ -4,6 +4,7 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { Layout } from "./components/Layout";
 import { Spinner } from "./components/ui";
 import AccountPage from "./pages/AccountPage";
+import EnquiryPage from "./pages/enquiry/EnquiryPage";
 import EnquiryFormPage from "./pages/EnquiryFormPage";
 import FollowUpsPage from "./pages/FollowUpsPage";
 import QuoteWindowRoute from "./pages/window/QuoteWindowRoute";
@@ -51,7 +52,8 @@ export default function App() {
         <Route path="plan/:salesPersonId" element={<QuoteWindowRoute />} />
         <Route path="enquiries" element={<RegisterPage />} />
         <Route path="enquiries/new" element={<EnquiryFormPage />} />
-        <Route path="enquiries/:id" element={<EnquiryFormPage />} />
+        <Route path="enquiries/:id" element={<EnquiryPage />} />
+        <Route path="enquiries/:id/edit" element={<EnquiryFormPage />} />
         <Route path="follow-ups" element={<FollowUpsPage />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route element={<MastersLayout />}>
