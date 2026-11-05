@@ -10,6 +10,7 @@ import type {
   DuplicateCandidate,
   EmailListItem,
   EmailMessage,
+  EmailReply,
   EmailStatus,
   Enquiry,
   EnquiryDraft,
@@ -27,6 +28,7 @@ import type {
   NotDuplicatePair,
   PortSummary,
   PeriodStats,
+  ReplyRequest,
   Profile,
   QuoteTime,
   Role,
@@ -743,6 +745,23 @@ export async function fetchDraftDuplicates(draftId: string): Promise<DuplicateCa
 export async function suggestCustomers(name: string | null, email: string | null): Promise<CustomerSuggestion[]> {
   const rows = unwrap<CustomerSuggestion[]>(await supabase.rpc("suggest_customers", { p_name: name ?? "", p_email: email ?? "" }));
   return rows.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+
+/** Sends a reply through Gmail as the pricing mailbox (gmail-send Edge Function, editors only). */
+export async function sendReply(request: ReplyRequest): Promise<{ message: string; id: string | null; sentAt: string; gmailMessageId: string }> {
+  const { data, error } = await supabase.functions.invoke("gmail-send", { method: "POST", body: request });
+  if (error) {
+    // The function answers errors as JSON {error}; show that rather than the generic HTTP message.
+    const context = (error as { context?: Response }).context;
+    const body = context && typeof context.json === "function" ? await context.json().catch(() => null) : null;
+    throw new Error((body as { error?: string } | null)?.error ?? error.message);
+  }
+  return data;
+}
+
+/** Replies sent from the app on this enquiry, oldest first. */
+export async function fetchEmailReplies(enquiryId: string): Promise<EmailReply[]> {
+  return unwrap(await supabase.from("email_replies").select("*").eq("enquiry_id", enquiryId).order("sent_at", { ascending: true }));
 }
 
 /** Runs the gmail-sync Edge Function now (editors only). */

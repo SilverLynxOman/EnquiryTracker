@@ -318,6 +318,33 @@ export interface EmailMessage {
   draft_id: string | null;
 }
 
+/** A reply sent from the app through Gmail (public.email_replies, written by the gmail-send Edge Function). */
+export interface EmailReply {
+  id: string;
+  enquiry_id: string | null;
+  reply_to_email_id: string | null;
+  sent_by: string | null;
+  from_email: string;
+  to_emails: string[];
+  cc_emails: string[];
+  subject: string;
+  body_text: string;
+  attachments: { filename: string; mime_type: string; size: number }[];
+  gmail_message_id: string;
+  gmail_thread_id: string;
+  sent_at: string;
+}
+
+/** What the reply box sends to gmail-send. */
+export interface ReplyRequest {
+  replyToEmailId: string;
+  to: string[];
+  cc: string[];
+  subject: string;
+  body: string;
+  attachments: { filename: string; mimeType: string; data: string }[];
+}
+
 /** An e-mail with the references of the enquiries it is linked or suggested to. */
 export interface EmailListItem extends EmailMessage {
   enquiry: { id: string; reference: string } | null;

@@ -1,4 +1,5 @@
-// Minimal Gmail REST client (read-only scope https://www.googleapis.com/auth/gmail.readonly).
+// Minimal Gmail REST client. Reading needs the scope https://www.googleapis.com/auth/gmail.readonly; send() (replies
+// from the app, gmail-send) also needs https://www.googleapis.com/auth/gmail.send.
 // Authenticates with an OAuth refresh token of the watched mailbox. See README "E-mail intake".
 import { decodeBase64Url } from "./parse.ts";
 import type { GmailMessage } from "./types.ts";
@@ -86,6 +87,21 @@ export class GmailApi {
 
   getMessage(id: string): Promise<GmailMessage> {
     return this.get<GmailMessage>(`/messages/${encodeURIComponent(id)}`, { format: "full" });
+  }
+
+  /**
+   * Sends a complete message (base64url `raw`) in an existing conversation; Gmail files it under Sent.
+   * Not retried: a timeout after Gmail accepted the message would otherwise send it twice.
+   */
+  async send(raw: string, threadId: string): Promise<{ id: string; threadId: string }> {
+    const res = await this.fetchFn(`${API}/messages/send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${await this.accessToken()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ raw, threadId }),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`Gmail /messages/send failed (${res.status}): ${text.slice(0, 300)}`);
+    return JSON.parse(text) as { id: string; threadId: string };
   }
 
   async getAttachment(messageId: string, attachmentId: string): Promise<Uint8Array> {
