@@ -7,6 +7,9 @@ import { controlBase, SelectBox } from "../components/SelectBox";
 import { Alert, Button, Empty } from "../components/ui";
 import {
   closeEnquiriesAsLost,
+  fetchFollowUpHistory,
+  logFollowUp,
+  undoFollowUp,
   countRegister,
   fetchRegisterIds,
   fetchSalesPersons,
@@ -16,7 +19,7 @@ import {
 } from "../lib/api";
 import { displayName } from "../lib/display";
 import { errorMessage, todayIso } from "../lib/format";
-import { bandFilters, FOLLOW_UP_BANDS, isFollowUpBand, STALE_DAYS, type FollowUpBand } from "../lib/followUps";
+import { bandFilters, FOLLOW_UP_BANDS, isFollowUpBand, latestFollowUps, STALE_DAYS, type FollowUpBand } from "../lib/followUps";
 import type { EnquiryRow } from "../lib/types";
 import { FollowUpTable } from "./followups/FollowUpTable";
 import { MarkLostDialog } from "./followups/MarkLostDialog";
@@ -89,6 +92,31 @@ export default function FollowUpsPage() {
   const total = list.data?.count ?? 0;
   const references = useMemo(() => new Map(rows.map((r) => [r.id, r.reference])), [rows]);
 
+  // Follow-ups logged on these rows (shared with the Game plan), and logging one as the signed-in sales person.
+  const mySalesPersonId = profile?.sales_person_id ?? null;
+  const rowIds = rows.map((r) => r.id);
+  const history = useQuery({
+    queryKey: ["follow-ups", "log", rowIds],
+    queryFn: () => fetchFollowUpHistory(rowIds),
+    enabled: rowIds.length > 0,
+    placeholderData: keepPreviousData,
+  });
+  const lastFollowUp = useMemo(() => latestFollowUps(history.data ?? []), [history.data]);
+  const mineToday = useMemo(
+    () => new Set((history.data ?? []).filter((h) => h.sales_person_id === mySalesPersonId && h.followed_up_on === today).map((h) => h.enquiry_id)),
+    [history.data, mySalesPersonId, today],
+  );
+  const names = useMemo(() => new Map((people.data ?? []).map((p) => [p.id, displayName(p.name)])), [people.data]);
+  const chase = useMutation({
+    mutationFn: ({ row, done }: { row: EnquiryRow; done: boolean }) =>
+      (done ? logFollowUp : undoFollowUp)(row.id, mySalesPersonId as string, today),
+    onSuccess: (_v, { row, done }) => {
+      setNotice(done ? `${row.reference}: follow-up logged for today.` : `${row.reference}: today's follow-up removed.`);
+      void queryClient.invalidateQueries({ queryKey: ["follow-ups", "log"] });
+      void queryClient.invalidateQueries({ queryKey: ["plan"] });
+    },
+  });
+
   const selectAll = useMutation({
     mutationFn: () => fetchRegisterIds(filters),
     onSuccess: (ids) => setSelected(new Set(ids)),
@@ -142,7 +170,7 @@ export default function FollowUpsPage() {
   const personName = people.data?.find((p) => p.id === salesPersonId)?.name;
   const quoted = band !== "unquoted";
   const current = FOLLOW_UP_BANDS.find((b) => b.key === band)!;
-  const error = list.error ?? counts.error ?? selectAll.error ?? undo.error;
+  const error = list.error ?? counts.error ?? selectAll.error ?? undo.error ?? history.error ?? chase.error;
 
   return (
     <div className="space-y-3">
@@ -269,6 +297,12 @@ export default function FollowUpsPage() {
             onTogglePage={togglePage}
             onConfirm={(r: EnquiryRow) => navigate(`/enquiries/${r.id}?confirm=1`)}
             onMarkLost={(r: EnquiryRow) => openDialog([r.id])}
+            lastFollowUp={lastFollowUp}
+            mineToday={mineToday}
+            personName={(id) => names.get(id) ?? "a colleague"}
+            canLogFollowUp={!!mySalesPersonId}
+            followUpSaving={chase.isPending ? (chase.variables?.row.id ?? null) : null}
+            onToggleFollowUp={(row, done) => chase.mutate({ row, done })}
             empty={
               <Empty
                 action={

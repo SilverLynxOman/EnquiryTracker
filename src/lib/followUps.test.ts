@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addDays } from "./format";
-import { bandFilters, FOLLOW_UP_BANDS, isFollowUpBand, STALE_DAYS, staleQuoteFilters, waitingDays } from "./followUps";
+import { bandFilters, chasedLabel, FOLLOW_UP_BANDS, isFollowUpBand, latestFollowUps, STALE_DAYS, staleQuoteFilters, waitingDays } from "./followUps";
 
 const today = "2026-11-04";
 const other = { salesPersonId: "s1", q: "oman" };
@@ -51,5 +51,24 @@ describe("waitingDays", () => {
   it("counts from the quote, or from the enquiry when there is none", () => {
     expect(waitingDays({ quoted_date: ago(20), enquiry_date: ago(25) }, today)).toBe(20);
     expect(waitingDays({ quoted_date: null, enquiry_date: ago(16) }, today)).toBe(16);
+  });
+});
+
+describe("follow-up log", () => {
+  it("keeps the latest follow-up of each enquiry, whoever logged it", () => {
+    const latest = latestFollowUps([
+      { enquiry_id: "e1", followed_up_on: ago(9), sales_person_id: "s1" },
+      { enquiry_id: "e1", followed_up_on: ago(2), sales_person_id: "s2" },
+      { enquiry_id: "e2", followed_up_on: ago(5), sales_person_id: "s1" },
+    ]);
+    expect(latest.get("e1")).toEqual({ enquiry_id: "e1", followed_up_on: ago(2), sales_person_id: "s2" });
+    expect(latest.get("e2")?.followed_up_on).toBe(ago(5));
+    expect(latest.has("e3")).toBe(false);
+  });
+
+  it("says when it was chased", () => {
+    expect(chasedLabel(today, today)).toBe("Chased today");
+    expect(chasedLabel(ago(1), today)).toBe("Chased yesterday");
+    expect(chasedLabel(ago(6), today)).toBe("Chased 6 days ago");
   });
 });

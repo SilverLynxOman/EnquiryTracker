@@ -375,6 +375,11 @@ export interface FollowUpLog {
   followed_up_on: string;
 }
 
+/** A follow-up with who logged it (follow_ups row). */
+export interface FollowUpRecord extends FollowUpLog {
+  sales_person_id: string;
+}
+
 export interface HighFive {
   id: number;
   message: string | null;

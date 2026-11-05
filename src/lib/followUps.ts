@@ -1,7 +1,7 @@
 import type { RegisterFilters } from "./api";
 import { daysBetween } from "./display";
 import { addDays } from "./format";
-import type { EnquiryRow } from "./types";
+import type { EnquiryRow, FollowUpRecord } from "./types";
 
 // Follow-ups: open enquiries that have waited too long, in age bands, so they can be chased or closed as lost.
 
@@ -56,3 +56,21 @@ export const LOST_REASONS = [
   "Shipment postponed by customer",
   "Enquiry withdrawn by customer",
 ];
+
+/** The latest follow-up per enquiry (several sales persons may chase the same quote). */
+export function latestFollowUps(records: FollowUpRecord[]): Map<string, FollowUpRecord> {
+  const out = new Map<string, FollowUpRecord>();
+  for (const r of records) {
+    const seen = out.get(r.enquiry_id);
+    if (!seen || r.followed_up_on > seen.followed_up_on) out.set(r.enquiry_id, r);
+  }
+  return out;
+}
+
+/** "Chased today", "Chased yesterday", "Chased 5 days ago". */
+export function chasedLabel(day: string, today: string): string {
+  const n = daysBetween(day, today);
+  if (n <= 0) return "Chased today";
+  if (n === 1) return "Chased yesterday";
+  return `Chased ${n} days ago`;
+}

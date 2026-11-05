@@ -14,6 +14,7 @@ import type {
   EnquiryPayload,
   EnquiryRow,
   FollowUpLog,
+  FollowUpRecord,
   GamePlanPrefs,
   HighFive,
   ImportBatch,
@@ -428,6 +429,18 @@ export async function saveGamePlanPrefs(userId: string, prefs: GamePlanPrefs): P
 export async function fetchFollowUpLog(salesPersonId: string, since: string): Promise<FollowUpLog[]> {
   return unwrap(
     await supabase.from("follow_ups").select("enquiry_id, followed_up_on").eq("sales_person_id", salesPersonId).gte("followed_up_on", since),
+  );
+}
+
+/** Every follow-up logged on these enquiries (by anyone), newest first. For the Follow-ups page's current rows. */
+export async function fetchFollowUpHistory(enquiryIds: string[]): Promise<FollowUpRecord[]> {
+  if (!enquiryIds.length) return [];
+  return unwrap(
+    await supabase
+      .from("follow_ups")
+      .select("enquiry_id, followed_up_on, sales_person_id")
+      .in("enquiry_id", enquiryIds)
+      .order("followed_up_on", { ascending: false }),
   );
 }
 
