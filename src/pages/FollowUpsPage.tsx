@@ -92,7 +92,7 @@ export default function FollowUpsPage() {
   const total = list.data?.count ?? 0;
   const references = useMemo(() => new Map(rows.map((r) => [r.id, r.reference])), [rows]);
 
-  // Follow-ups logged on these rows (shared with the Game plan), and logging one as the signed-in sales person.
+  // Follow-ups logged on these rows (shared with The Window), and logging one as the signed-in sales person.
   const mySalesPersonId = profile?.sales_person_id ?? null;
   const rowIds = rows.map((r) => r.id);
   const history = useQuery({
@@ -113,7 +113,7 @@ export default function FollowUpsPage() {
     onSuccess: (_v, { row, done }) => {
       setNotice(done ? `${row.reference}: follow-up logged for today.` : `${row.reference}: today's follow-up removed.`);
       void queryClient.invalidateQueries({ queryKey: ["follow-ups", "log"] });
-      void queryClient.invalidateQueries({ queryKey: ["plan"] });
+      void queryClient.invalidateQueries({ queryKey: ["window"] });
     },
   });
 

@@ -6,7 +6,7 @@ import { Spinner } from "./components/ui";
 import AccountPage from "./pages/AccountPage";
 import EnquiryFormPage from "./pages/EnquiryFormPage";
 import FollowUpsPage from "./pages/FollowUpsPage";
-import GamePlanRoute from "./pages/gameplan/GamePlanRoute";
+import QuoteWindowRoute from "./pages/window/QuoteWindowRoute";
 import HomePage from "./pages/HomePage";
 import InboxPage from "./pages/InboxPage";
 import LoginPage from "./pages/LoginPage";
@@ -20,7 +20,7 @@ import ReportsLayout from "./pages/reports/ReportsLayout";
 const ImportPage = lazy(() => import("./pages/ImportPage"));
 const PeriodReportPage = lazy(() => import("./pages/reports/PeriodReportPage"));
 const AnalyticsPage = lazy(() => import("./pages/reports/AnalyticsPage"));
-const TvPage = lazy(() => import("./pages/gameplan/TvPage"));
+const TvPage = lazy(() => import("./pages/voyage/TvPage"));
 // Admins only, and rarely opened.
 const UsersPage = lazy(() => import("./pages/UsersPage"));
 
@@ -47,8 +47,8 @@ export default function App() {
         }
       >
         <Route index element={<HomePage />} />
-        <Route path="plan" element={<GamePlanRoute />} />
-        <Route path="plan/:salesPersonId" element={<GamePlanRoute />} />
+        <Route path="plan" element={<QuoteWindowRoute />} />
+        <Route path="plan/:salesPersonId" element={<QuoteWindowRoute />} />
         <Route path="enquiries" element={<RegisterPage />} />
         <Route path="enquiries/new" element={<EnquiryFormPage />} />
         <Route path="enquiries/:id" element={<EnquiryFormPage />} />

@@ -14,7 +14,7 @@ The analysis of the current workbooks, the data model and the phased roadmap are
 
 | Screen | |
 |---|---|
-| Game plan | Home page of every user linked to a sales person: today's missions (quotes to send, quotes to follow up, a high-five), the quick-quote streak, a monthly goal paced against last month, personal records, high-fives and the team ship. No money on it. Anyone's plan opens at `/plan/<sales person>` (see [docs/DESIGN.md](docs/DESIGN.md#game-plan-and-team-voyage)) |
+| The Window | Home page of every user linked to a sales person: every open quote on a timeline of days since it was sent, against their own win window (the days in which 95% of their wins arrive), enquiries waiting for a quote, the month's wins against last month, and quick quotes against the team. Mark quoted, Followed up, Won and Mark lost from the page; quotes older than two weeks link to Follow-ups. No money on it. Anyone's opens at `/plan/<sales person>` (see [docs/DESIGN.md](docs/DESIGN.md#the-window-and-the-team-voyage)) |
 | Team voyage and TV view | One container per job confirmed this month on a ship, against the team goal (admins set it; otherwise "beat last month"). `/tv` shows it full screen for the office, refreshing every two minutes |
 | Dashboard | For managers (users not linked to a sales person): today / month-to-date enquiries, quotes, confirmations, conversion, profit; the team ship; follow-up lists; per-sales-person table (the weekly `DATA` sheet) |
 | Register | Status tabs with live counts; search; date basis and period presets, sales person, shipment; one next step per row (*Mark quoted*, *Confirm job*, *View details*); details drawer; column chooser; export of the filtered view to Excel in the register layout |
@@ -108,7 +108,7 @@ In the Supabase dashboard:
    ```
 
    Roles: `admin` (everything, including delete and managing users), `editor` (add / edit / import), `viewer` (read-only, the default).
-5. Everyone else is set up in the app: sign in as that admin and open the avatar menu → **Users and roles**. Give each person their role, and link each sales person's login to their name in the register, so the game plan becomes their home page. Users without a link (managers, pricing) keep the dashboard. Invited users appear there as soon as they are invited.
+5. Everyone else is set up in the app: sign in as that admin and open the avatar menu → **Users and roles**. Give each person their role, and link each sales person's login to their name in the register, so their open quotes (The Window) become their home page. Users without a link (managers, pricing) keep the dashboard. Invited users appear there as soon as they are invited.
 
 ### 3. Run locally
 

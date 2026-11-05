@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { shipName, shipRows } from "../../lib/gamePlan";
+import { shipName, shipRows } from "../../lib/teamVoyage";
 
 /** True on screens 1024 px and wider, where the ship gets a wider (panorama) frame. */
 function useLargeScreen(): boolean {
@@ -16,7 +16,7 @@ function useLargeScreen(): boolean {
 
 // The team voyage illustration: a container ship at sunrise, one container per confirmed job, coloured by the
 // sales person who won it. Drawn as one SVG, so it keeps its proportions from a phone to the office TV.
-// Colours are tokens (--color-ship-*, --color-crew-*); see docs/DESIGN.md, "Game plan".
+// Colours are tokens (--color-ship-*, --color-crew-*); see docs/DESIGN.md, "The Window and the team voyage".
 
 /** Literal class names so Tailwind generates them: index = crew colour (0 = no sales person). */
 export const CREW_BG = [
@@ -88,7 +88,7 @@ export function TeamShip({ slots, label, rock = false }: { slots: ShipSlot[]; la
           <g className={rock ? "animate-bob" : undefined}>
             {/* Bridge and funnel at the stern */}
             <rect x="97" y={SKY} width="22" height={FUNNEL} rx="3" className="fill-ship-hull" />
-            <rect x="97" y={SKY + 6} width="22" height="5" className="fill-flame" />
+            <rect x="97" y={SKY + 6} width="22" height="5" className="fill-ship-funnel" />
             <rect x="88" y={SKY + FUNNEL} width="62" height={stackH + 2} rx="6" className="fill-ship-cabin stroke-ship-hull" strokeWidth="3" />
             {Array.from({ length: 6 }, (_, i) => (
               <rect key={i} x={97 + (i % 3) * 16} y={SKY + FUNNEL + 10 + Math.floor(i / 3) * 14} width="11" height="8" rx="2" className="fill-ship-hull" />

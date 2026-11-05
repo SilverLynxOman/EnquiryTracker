@@ -61,8 +61,8 @@ export function SharedLinkDialog({
         {others.length === 1 ? "is" : "are"} already linked to {person}.
       </p>
       <p className="rounded-control bg-table-head px-3 py-2 text-ink-heading">
-        Logins linked to the same sales person open the same game plan, and their follow-ups and high-fives count as{" "}
-        {person}'s. Usually each sales person has one login.
+        Logins linked to the same sales person open the same open quotes page, and their follow-ups count as {person}'s. Usually each sales
+        person has one login.
       </p>
       <p>
         <strong className="font-semibold">Move to {name}</strong> removes the link from {others.length === 1 ? "the other login" : "the other logins"}.

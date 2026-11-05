@@ -6,18 +6,10 @@ import { Icon } from "../../components/icons";
 import { Alert, Button, buttonClass, inputClass, Spinner } from "../../components/ui";
 import { fetchMonthlyTrend, fetchTeamGoal, fetchTeamWins, saveTeamGoal } from "../../lib/api";
 import { errorMessage } from "../../lib/format";
-import {
-  crewOf,
-  defaultTeamGoal,
-  lastMonthAtThisPoint,
-  monthLabel,
-  monthPace,
-  previousMonth,
-  teamRecord,
-  type CrewMember,
-} from "../../lib/gamePlan";
 import { lastOfMonth, monthPeriod } from "../../lib/reports";
+import { crewOf, defaultTeamGoal, teamRecord, type CrewMember } from "../../lib/teamVoyage";
 import type { TeamWin } from "../../lib/types";
+import { lastMonthAtThisPoint, monthLabel, monthPace, previousMonth } from "../../lib/workdays";
 import { CREW_BG, TeamShip, type ShipSlot } from "./TeamShip";
 
 /** This month's confirmed jobs against the team goal (set by an admin, or "beat last month"). */
@@ -57,7 +49,7 @@ export function useTeamVoyage(today: string, refetchInterval?: number) {
 export type TeamVoyage = ReturnType<typeof useTeamVoyage>;
 
 /** One slot per container up to the goal (or beyond, once the goal is passed). */
-export function shipSlots(wins: TeamWin[], crew: CrewMember[], target: number, highlight: string | null): ShipSlot[] {
+export function shipSlots(wins: TeamWin[], crew: CrewMember[], target: number): ShipSlot[] {
   const byId = new Map(crew.map((c) => [c.id, c]));
   const capacity = Math.max(target, wins.length);
   return Array.from({ length: capacity }, (_, i) => {
@@ -70,7 +62,6 @@ export function shipSlots(wins: TeamWin[], crew: CrewMember[], target: number, h
     return {
       key: w.id,
       colour: member?.colour ?? 0,
-      dimmed: highlight !== null && (w.sales_person_id ?? "") !== highlight,
       title: `Container ${i + 1}: ${member?.name ?? "Unassigned"}, ${w.reference}`,
     };
   });
@@ -100,7 +91,7 @@ export function CrewChip({ member, link }: { member: CrewMember; link: boolean }
   );
   const cls = "inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-meta";
   return link && member.id ? (
-    <Link to={`/plan/${member.id}`} className={`${cls} hover:border-control hover:bg-row-hover`} title={`Open ${member.name}'s game plan`}>
+    <Link to={`/plan/${member.id}`} className={`${cls} hover:border-control hover:bg-row-hover`} title={`Open ${member.name}'s open quotes`}>
       {content}
     </Link>
   ) : (
@@ -143,28 +134,21 @@ function GoalEditor({ month, current, onDone }: { month: string; current: number
   );
 }
 
-/** The team ship as a card: on the game plan (highlighting the viewer) and on the managers' dashboard. */
+/** The team ship as a card on the managers' dashboard. */
 export function TeamVoyageCard({
   today,
-  highlightId = null,
-  highlightName = null,
-  planLinks = false,
+  personLinks = false,
   actions,
 }: {
   today: string;
-  /** The sales person whose containers the "Highlight" button picks out. */
-  highlightId?: string | null;
-  /** Their name when it is someone else's plan; null on the viewer's own ("Highlight mine"). */
-  highlightName?: string | null;
-  planLinks?: boolean;
+  /** Crew chips open that sales person's open quotes (The Window). */
+  personLinks?: boolean;
   actions?: ReactNode;
 }) {
   const { isAdmin } = useAuth();
   const v = useTeamVoyage(today);
-  const [mineOnly, setMineOnly] = useState(false);
   const [editing, setEditing] = useState(false);
-  const canHighlight = !!highlightId && v.crew.some((c) => c.id === highlightId);
-  const slots = shipSlots(v.wins, v.crew, v.target, mineOnly && canHighlight ? highlightId : null);
+  const slots = shipSlots(v.wins, v.crew, v.target);
   const left = Math.max(0, v.target - v.loaded);
 
   return (
@@ -232,12 +216,7 @@ export function TeamVoyageCard({
               {v.crew.length === 0 ? (
                 <p className="text-meta text-ink-muted">No confirmed jobs yet this month. The first container is up for grabs.</p>
               ) : (
-                v.crew.map((m) => <CrewChip key={m.id || "unassigned"} member={m} link={planLinks} />)
-              )}
-              {canHighlight && (
-                <Button variant="ghost" size="sm" className="ml-auto" aria-pressed={mineOnly} onClick={() => setMineOnly((x) => !x)}>
-                  {mineOnly ? "Show everyone" : highlightName ? `Highlight ${highlightName}'s` : "Highlight mine"}
-                </Button>
+                v.crew.map((m) => <CrewChip key={m.id || "unassigned"} member={m} link={personLinks} />)
               )}
             </div>
           </>

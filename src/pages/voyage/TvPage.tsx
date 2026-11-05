@@ -1,13 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Logo } from "../../components/icons";
-import { fetchHighFives } from "../../lib/api";
-import { displayName, fmtDayMonth } from "../../lib/display";
-import { addDays, errorMessage, todayIso } from "../../lib/format";
-import { dayLabel, laneLabel, monthLabel } from "../../lib/gamePlan";
+import { fmtDayMonth } from "../../lib/display";
+import { errorMessage, todayIso } from "../../lib/format";
 import { MODE_LABELS } from "../../lib/types";
-import { senderName } from "./HighFivesCard";
+import { dayLabel, laneLabel, monthLabel } from "../../lib/workdays";
 import { CREW_BG, TeamShip } from "./TeamShip";
 import { comparedWithLastMonth, shipLabel, shipSlots, useTeamVoyage } from "./TeamVoyage";
 
@@ -30,8 +27,6 @@ export default function TvPage() {
     return () => clearInterval(t);
   }, []);
   const v = useTeamVoyage(today, REFRESH);
-  const since = addDays(today, -7);
-  const highFives = useQuery({ queryKey: ["voyage", "high-fives", since], queryFn: () => fetchHighFives(since, undefined, 4), refetchInterval: REFRESH });
   const byId = new Map(v.crew.map((c) => [c.id, c]));
   // Sized to fit a 1920 × 1080 screen without scrolling: nobody scrolls a wall screen.
   const latest = [...v.wins].reverse().slice(0, 4);
@@ -81,9 +76,9 @@ export default function TvPage() {
               </dl>
             </div>
 
-            <TeamShip rock slots={shipSlots(v.wins, v.crew, v.target, null)} label={shipLabel(v)} />
+            <TeamShip rock slots={shipSlots(v.wins, v.crew, v.target)} label={shipLabel(v)} />
 
-            <div className="grid gap-6 lg:grid-cols-3">
+            <div className="grid gap-6 lg:grid-cols-2">
               <section className="rounded-panel bg-tv-panel p-6">
                 <h2 className="mb-3 text-tv font-semibold">Just loaded</h2>
                 {latest.length === 0 ? (
@@ -122,24 +117,6 @@ export default function TvPage() {
                   ))}
                 </ul>
                 {v.crew.length > crew.length && <p className="mt-2 text-title text-tv-muted">and {v.crew.length - crew.length} more on the board</p>}
-              </section>
-
-              <section className="rounded-panel bg-tv-panel p-6">
-                <h2 className="mb-3 text-tv font-semibold">High-fives</h2>
-                {!highFives.data?.length ? (
-                  <p className="text-title text-tv-muted">{highFives.error ? "High-fives are not available yet." : "No high-fives this week yet. Who deserves one?"}</p>
-                ) : (
-                  <ul className="space-y-3">
-                    {highFives.data.map((h) => (
-                      <li key={h.id}>
-                        <div className="text-tv font-semibold">
-                          {senderName(h)} → {displayName(h.receiver?.name) || "a teammate"}
-                        </div>
-                        {h.message && <p className="text-title text-tv-muted">“{h.message}”</p>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </section>
             </div>
           </>
