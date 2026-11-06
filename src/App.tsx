@@ -13,6 +13,7 @@ import HomePage from "./pages/HomePage";
 import InboxPage from "./pages/InboxPage";
 import LoginPage from "./pages/LoginPage";
 import { AGENTS, CUSTOMERS, PORTS } from "./pages/masters/kinds";
+import MasterDetailPage from "./pages/masters/MasterDetailPage";
 import MasterListPage from "./pages/masters/MasterListPage";
 import MastersLayout from "./pages/masters/MastersLayout";
 import RegisterPage from "./pages/RegisterPage";
@@ -68,6 +69,8 @@ export default function App() {
           {/* key: a fresh page (filters, selection) per list */}
           <Route path="customers" element={<MasterListPage key="customers" kind={CUSTOMERS} />} />
           <Route path="agents" element={<MasterListPage key="agents" kind={AGENTS} />} />
+          <Route path="customers/:id" element={<MasterDetailPage key="customer" kind={CUSTOMERS} />} />
+          <Route path="agents/:id" element={<MasterDetailPage key="agent" kind={AGENTS} />} />
           <Route path="ports" element={<MasterListPage key="ports" kind={PORTS} />} />
         </Route>
         <Route
