@@ -1,5 +1,6 @@
 import { addDays } from "./format";
 import type { ActivityRow } from "./masterActivity";
+import type { DetailRow } from "./masterDetail";
 import { supabase } from "./supabase";
 import type {
   AuditEntry,
@@ -207,6 +208,19 @@ export async function fetchMasterActivity(): Promise<ActivityRow[]> {
       .range(from, to),
   );
   return rows.map((r) => ({ ...r, sales_person: r.sales_person?.name ?? null }));
+}
+
+/** Every enquiry of one customer or agent, newest first: its own page. */
+export function fetchMasterHistory(kind: "customers" | "agents", id: string): Promise<DetailRow[]> {
+  return fetchAllPages<DetailRow>((a, b) =>
+    supabase
+      .from("enquiry_register")
+      .select("id, reference, enquiry_date, quoted_date, status, shipment_mode, pol, pod, profit, customer_id, customer_name, agent_name, sales_person_name")
+      .eq(kind === "customers" ? "customer_id" : "agent_id", id)
+      .order("enquiry_date", { ascending: false })
+      .order("reference", { ascending: false })
+      .range(a, b),
+  );
 }
 
 /** Every port spelling used as POL or POD, with counts (id is the spelling's name key). */

@@ -90,6 +90,7 @@ export function MasterTable({
   const extra = kind.extra && (kind.key !== "customers" || rows.some((r) => !!r.contacts)) ? kind.extra : undefined;
   const menu = (r: MasterRow): MenuItem[] => [
     { label: "Details", icon: "columns", onSelect: () => onOpen(r) },
+    ...(kind.key !== "ports" ? [{ label: "Full view", icon: "chart" as const, onSelect: () => navigate(`/${kind.key}/${r.id}`) }] : []),
     { label: "View enquiries", icon: "register", onSelect: () => navigate(enquiriesLink(r.name)) },
     ...(canRename ? [{ label: "Rename…", icon: "edit" as const, onSelect: () => onRename(r) }] : []),
   ];

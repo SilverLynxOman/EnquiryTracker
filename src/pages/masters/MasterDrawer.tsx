@@ -207,6 +207,12 @@ export function MasterDrawer({
             <Icon name="register" className="size-4" />
             View enquiries
           </Link>
+          {kind.key !== "ports" && (
+            <Link to={`/${kind.key}/${row.id}`} className={buttonClass("primary")}>
+              <Icon name="chart" className="size-4" />
+              Full view
+            </Link>
+          )}
         </footer>
       </aside>
     </>
