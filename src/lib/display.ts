@@ -93,6 +93,7 @@ export function statusDetail(r: EnquiryRow, today: string): { text: string; long
       return { text: r.confirmed_date ? fmtDayMonth(r.confirmed_date, today) : "", longWait: false };
     case "lost":
     case "cancelled":
+    case "not_genuine":
       return { text: r.closure_reason?.trim() || "No reason recorded", longWait: false };
   }
 }

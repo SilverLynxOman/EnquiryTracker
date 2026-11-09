@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Link } from "react-router";
+import { Icon } from "../../components/icons";
 import { Alert, Card, Spinner } from "../../components/ui";
 import { fetchCustomerNotDuplicates, fetchCustomerSummaries } from "../../lib/api";
 import { DEFAULT_MIN_SCORE, findDuplicatePairs, matchKey, pairKey } from "../../lib/customerDuplicates";
@@ -97,6 +98,15 @@ export function CustomerCard({
                 <div className="text-meta text-ink-muted">profit on those jobs</div>
               </div>
             </div>
+            {stats.notGenuine > 0 && (
+              <p className="mt-3 flex items-center gap-2 rounded-control bg-not-genuine-bg px-3 py-2 text-meta text-not-genuine">
+                <Icon name="flag" className="size-4 shrink-0" />
+                <span>
+                  <strong className="font-semibold">{stats.notGenuine}</strong> of their enquiries this year {stats.notGenuine === 1 ? "was" : "were"} marked
+                  not genuine (not counted above).
+                </span>
+              </p>
+            )}
             <ul className="mt-3 space-y-1.5 text-body text-ink-heading">
               {stats.usualDays != null && (
                 <li>Usually confirms {stats.usualDays === 0 ? "on the day of the quote" : `${plural(stats.usualDays, "day")} after the quote`}.</li>

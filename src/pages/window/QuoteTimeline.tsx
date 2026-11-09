@@ -113,6 +113,7 @@ export function QuoteTimeline({
   onChase,
   onWon,
   onMarkLost,
+  onMarkNotGenuine,
 }: {
   view: WindowView;
   windowDays: number;
@@ -137,6 +138,7 @@ export function QuoteTimeline({
   onChase: (e: WindowEnquiry, done: boolean) => void;
   onWon: (e: WindowEnquiry) => void;
   onMarkLost: (e: WindowEnquiry) => void;
+  onMarkNotGenuine: (e: WindowEnquiry) => void;
 }) {
   const navigate = useNavigate();
   const boundary = 3 + (Math.min(windowDays + 0.5, TIMELINE_DAYS) / TIMELINE_DAYS) * 94;
@@ -150,7 +152,12 @@ export function QuoteTimeline({
   const staleTotal = stale ? stale["14-30"] + stale["31-90"] + stale["90+"] : null;
 
   const menu = (e: WindowEnquiry): MenuItem[] => [
-    ...(canEdit ? [{ label: "Mark lost…", icon: "close" as const, onSelect: () => onMarkLost(e) }] : []),
+    ...(canEdit
+      ? [
+          { label: "Mark lost…", icon: "close" as const, onSelect: () => onMarkLost(e) },
+          { label: "Not genuine…", icon: "flag" as const, onSelect: () => onMarkNotGenuine(e) },
+        ]
+      : []),
     { label: "Open enquiry", icon: "external" as const, onSelect: () => navigate(`/enquiries/${e.id}`) },
   ];
   const more = (e: WindowEnquiry) => (

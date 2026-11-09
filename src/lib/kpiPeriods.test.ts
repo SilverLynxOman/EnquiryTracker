@@ -88,6 +88,7 @@ describe("kpis", () => {
     converted: 12,
     profit: 5756,
     sell_total: 88253,
+    not_genuine: 3,
   };
 
   it("works out rates and averages", () => {
@@ -105,6 +106,7 @@ describe("kpis", () => {
       converted: 0,
       profit: 0,
       sell_total: 0,
+      not_genuine: 0,
     });
     expect(v.conversion).toBeNull();
     expect(v.margin).toBeNull();

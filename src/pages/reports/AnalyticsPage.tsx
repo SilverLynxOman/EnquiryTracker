@@ -120,7 +120,7 @@ type Metric = "profit" | "sales" | "enquiries" | "conversion";
 const METRICS: { value: Metric; label: string; title: string; note: string }[] = [
   { value: "profit", label: "Profit", title: "Profit per month", note: "by confirmation date" },
   { value: "sales", label: "Sales", title: "Sales per month", note: "by confirmation date" },
-  { value: "enquiries", label: "Enquiries", title: "Enquiries per month", note: "by enquiry date, cancelled not counted" },
+  { value: "enquiries", label: "Enquiries", title: "Enquiries per month", note: "by enquiry date, cancelled and not genuine not counted" },
   { value: "conversion", label: "Conversion", title: "Conversion per month", note: "share of the month's enquiries now confirmed" },
 ];
 
@@ -278,7 +278,7 @@ function kpiTiles(t: Totals, p: Totals | null): KpiTileData[] {
   const conv = (x: Totals) => (x.enquiries ? (x.converted / x.enquiries) * 100 : null);
   const margin = (x: Totals) => (x.confirmed_sell ? (x.confirmed_profit / x.confirmed_sell) * 100 : null);
   return [
-    { colour: "enquiries", label: "Enquiries", hint: "Raised in the range, cancelled not counted", kind: "count", value: t.enquiries, previous: p?.enquiries },
+    { colour: "enquiries", label: "Enquiries", hint: "Raised in the range, cancelled and not genuine not counted", kind: "count", value: t.enquiries, previous: p?.enquiries },
     {
       colour: "quoted",
       label: "Quoted",
@@ -384,7 +384,7 @@ export default function AnalyticsPage() {
     <div className="space-y-4">
       <ReportHeader
         title={rangeLabel(from, to, true)}
-        sub="Analytics · enquiries raised in the range, cancelled not counted"
+        sub="Analytics · enquiries raised in the range, cancelled and not genuine not counted"
         onExport={doExport}
         exporting={exporting}
         canExport={!!trend.data && !trend.isPlaceholderData && !exporting}
@@ -445,7 +445,7 @@ export default function AnalyticsPage() {
         </header>
         <div className="p-4">
           <p className="mb-3 text-meta text-ink-muted">
-            Enquiries raised {fmtDate(from)} – {fmtDate(to)} (cancelled not counted) and what became of them. Sales and profit are for the ones now
+            Enquiries raised {fmtDate(from)} – {fmtDate(to)} (cancelled and not genuine not counted) and what became of them. Sales and profit are for the ones now
             confirmed.
           </p>
           {!breakdown.data ? (

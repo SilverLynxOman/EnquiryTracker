@@ -248,7 +248,10 @@ function checkForm(f: FormState) {
   if (f.quoted_date && f.enquiry_date && f.quoted_date < f.enquiry_date) warnings.push("Quoted date is before the enquiry date.");
   if (f.confirmed_date && f.enquiry_date && f.confirmed_date < f.enquiry_date) warnings.push("Confirmation date is before the enquiry date.");
   if (f.confirmed_date && !f.sell_total) warnings.push("Confirmed without a sell amount — profit will be missing from reports.");
-  if (f.confirmed_date && f.closure) warnings.push(`A confirmed enquiry is marked ${f.closure}; reports will treat it as ${f.closure === "cancelled" ? "cancelled" : "confirmed"}.`);
+  if (f.confirmed_date && f.closure) {
+    const marked = f.closure === "not_genuine" ? "not genuine" : f.closure;
+    warnings.push(`A confirmed enquiry is marked ${marked}; reports will treat it as ${f.closure === "cancelled" ? "cancelled" : "confirmed"}.`);
+  }
   if (!f.sales_person_name) warnings.push("No sales person selected.");
   if (f.contact_email.trim() && !/^[^@\s]+@[^@\s]+$/.test(f.contact_email.trim())) errors.push("The contact e-mail address is not valid.");
   return { errors, warnings };
@@ -514,6 +517,7 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
                 <option value="">— open —</option>
                 <option value="lost">Lost</option>
                 <option value="cancelled">Cancelled</option>
+                <option value="not_genuine">Not genuine</option>
               </select>
             </Field>
             <Field label="Reason">{input("closure_reason", { disabled: !form.closure || !canEdit, placeholder: "e.g. rate too high" })}</Field>

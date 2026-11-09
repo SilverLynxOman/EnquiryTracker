@@ -48,12 +48,16 @@
   --color-lost-bg: #fef2f2;
   --color-cancelled: #526075;
   --color-cancelled-bg: #f1f3f7;
+  --color-not-genuine: #9d174d;
+  --color-not-genuine-bg: #fdf2f8;
+  --color-not-genuine-line: #fbcfe8;
   /* Small decorative dots beside the status tab labels */
   --color-await-dot: #d97706;
   --color-quoted-dot: #5546d9;
   --color-confirmed-dot: #16a34a;
   --color-lost-dot: #dc2626;
   --color-cancelled-dot: #8a94a6;
+  --color-not-genuine-dot: #db2777;
   --color-danger: #b42318;
   --color-danger-hover: #912018;
 

@@ -31,7 +31,7 @@ function Rows({ items }: { items: [string, ReactNode][] }) {
 }
 
 function Progress({ row, today }: { row: EnquiryRow; today: string }) {
-  const closed = row.status === "lost" || row.status === "cancelled";
+  const closed = row.status === "lost" || row.status === "cancelled" || row.status === "not_genuine";
   const steps = [
     { label: "Enquiry received", date: row.enquiry_date, done: true },
     { label: "Quote sent", date: row.quoted_date, done: !!row.quoted_date },

@@ -1,7 +1,7 @@
 import { daysBetween } from "./display";
 import { STALE_DAYS } from "./followUps";
 import { monthPeriod } from "./reports";
-import type { FollowUpRecord, QuoteTime, ShipmentMode, WindowEnquiry } from "./types";
+import { countsAsEnquiry, type FollowUpRecord, type QuoteTime, type ShipmentMode, type WindowEnquiry } from "./types";
 import { isQuickQuote, previousMonth, quoteDeadline } from "./workdays";
 
 // The Window: a sales person's home page. Every open quote sits on a timeline of days since it was sent, against
@@ -69,11 +69,11 @@ export function customerKey(e: Pick<WindowEnquiry, "customer_id" | "customer_nam
   return e.customer_id || e.customer_name;
 }
 
-/** Each customer's enquiries with this sales person since `since` (cancelled ones aside), and how many were won. */
+/** Each customer's enquiries with this sales person since `since` (cancelled and not genuine aside), and how many were won. */
 export function customerRecords(rows: WindowEnquiry[], since: string): Map<string, CustomerRecord> {
   const out = new Map<string, CustomerRecord>();
   for (const e of rows) {
-    if (e.enquiry_date < since || e.status === "cancelled") continue;
+    if (e.enquiry_date < since || !countsAsEnquiry(e.status)) continue;
     const key = customerKey(e);
     const r = out.get(key) ?? { enquiries: 0, wins: 0 };
     r.enquiries++;

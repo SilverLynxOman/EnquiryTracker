@@ -4,7 +4,7 @@ import { STALE_DAYS } from "./followUps";
 import { addDays } from "./format";
 import { nameKey } from "./normalize";
 import { waitStatus } from "./quoteWindow";
-import type { EmailMessage, EnquiryRow, FollowUpRecord, HistoryRow } from "./types";
+import { countsAsEnquiry, type AuditEntry, type Closure, type EmailMessage, type EnquiryRow, type FollowUpRecord, type HistoryRow } from "./types";
 import { isQuickQuote, quoteDeadline } from "./workdays";
 
 // The enquiry page's rules: its progress line, what the e-mails suggest, the customer's record and the lane's history.
@@ -283,7 +283,7 @@ export interface Stage {
   /** The day it happened, when it has. */
   date: string | null;
   note: string;
-  tone: "good" | "warn" | "bad" | null;
+  tone: "good" | "warn" | "bad" | "flag" | null;
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -366,14 +366,14 @@ export function buildStages(
       note: lag == null ? "" : lag <= 0 ? "On the day of the quote" : `${plural(lag, "day")} after the quote`,
       tone: "good",
     };
-  } else if (row.status === "lost" || row.status === "cancelled") {
+  } else if (row.status === "lost" || row.status === "cancelled" || row.status === "not_genuine") {
     outcome = {
       key: "outcome",
-      label: row.status === "lost" ? "Lost" : "Cancelled",
+      label: row.status === "lost" ? "Lost" : row.status === "cancelled" ? "Cancelled" : "Not genuine",
       state: "closed",
       date: null,
       note: row.closure_reason?.trim() || "No reason recorded",
-      tone: "bad",
+      tone: row.status === "not_genuine" ? "flag" : "bad",
     };
   } else {
     outcome = { key: "outcome", label: "Won or lost", state: "todo", date: null, note: "Not yet", tone: null };
@@ -385,8 +385,10 @@ export function buildStages(
 // --- The customer's record and the lane's history ------------------------------------------------------------
 
 export interface CustomerStats {
-  /** Enquiries raised since the season start (cancelled ones aside), this one included. */
+  /** Enquiries raised since the season start (cancelled and not genuine ones aside), this one included. */
   enquiries: number;
+  /** Their enquiries since the season start that staff marked not genuine. */
+  notGenuine: number;
   won: number;
   /** Sell and profit of those won (the register keeps USD). */
   sold: number;
@@ -408,7 +410,8 @@ function median(values: number[]): number | null {
 }
 
 export function customerStats(rows: HistoryRow[], currentId: string, since: string, today: string): CustomerStats {
-  const season = rows.filter((r) => r.enquiry_date >= since && r.status !== "cancelled");
+  const raised = rows.filter((r) => r.enquiry_date >= since);
+  const season = raised.filter((r) => countsAsEnquiry(r.status));
   const won = season.filter((r) => r.status === "confirmed");
   const lags = won
     .filter((r) => r.quoted_date && r.confirmed_date)
@@ -422,6 +425,7 @@ export function customerStats(rows: HistoryRow[], currentId: string, since: stri
   const quoted = others.filter((r) => r.status === "quoted");
   return {
     enquiries: season.length,
+    notGenuine: raised.filter((r) => r.status === "not_genuine").length,
     won: won.length,
     sold: won.reduce((s, r) => s + (r.sell_total ?? 0), 0),
     profit: won.reduce((s, r) => s + (r.profit ?? 0), 0),
@@ -434,7 +438,7 @@ export function customerStats(rows: HistoryRow[], currentId: string, since: stri
 }
 
 export interface LaneStats {
-  /** Other enquiries on the lane in the same mode since the season start (cancelled ones aside). */
+  /** Other enquiries on the lane in the same mode since the season start (cancelled and not genuine ones aside). */
   enquiries: number;
   won: number;
   open: number;
@@ -447,7 +451,7 @@ export function laneStats(rows: HistoryRow[], current: Pick<EnquiryRow, "id" | "
     (r) =>
       r.id !== current.id &&
       r.enquiry_date >= since &&
-      r.status !== "cancelled" &&
+      countsAsEnquiry(r.status) &&
       (!current.shipment_mode || r.shipment_mode === current.shipment_mode),
   );
   const won = lane.filter((r) => r.status === "confirmed");
@@ -460,4 +464,12 @@ export function laneStats(rows: HistoryRow[], current: Pick<EnquiryRow, "id" | "
       .sort((a, b) => (a.confirmed_date! < b.confirmed_date! ? 1 : a.confirmed_date! > b.confirmed_date! ? -1 : 0))
       .slice(0, show),
   };
+}
+
+/** Who closed the enquiry the way it is closed now, and when: the latest change in its history that set the closure. */
+export function closedBy(audit: AuditEntry[], closure: Closure): { by: string | null; at: string } | null {
+  const hit = audit
+    .filter((a) => a.action === "update" && (a.changes as Record<string, { new?: unknown }> | null)?.closure?.new === closure)
+    .sort((a, b) => (a.changed_at < b.changed_at ? 1 : a.changed_at > b.changed_at ? -1 : 0))[0];
+  return hit ? { by: hit.changed_by, at: hit.changed_at } : null;
 }

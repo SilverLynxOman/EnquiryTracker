@@ -10,6 +10,7 @@ const TABS: { key: Status | ""; label: string }[] = [
   { key: "confirmed", label: STATUS_META.confirmed.label },
   { key: "lost", label: STATUS_META.lost.label },
   { key: "cancelled", label: STATUS_META.cancelled.label },
+  { key: "not_genuine", label: STATUS_META.not_genuine.label },
 ];
 
 /** Status filter as compact text tabs with live counts (under the other filters). */

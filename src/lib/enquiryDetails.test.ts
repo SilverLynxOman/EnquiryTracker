@@ -3,6 +3,7 @@ import { QUOTE_MARKER } from "./emailDrafts";
 import {
   asksForBetterRate,
   buildStages,
+  closedBy,
   customerMarks,
   customerStats,
   dayWithWeekday,
@@ -309,6 +310,28 @@ describe("the progress line", () => {
       ["closed", "No reason recorded"],
     ]);
   });
+
+  it("closes the line with a flag when the enquiry is not genuine", () => {
+    const fake = enquiry({ reference: "SL4", enquiry_date: "2026-11-03", quoted_date: "2026-11-04", status: "not_genuine", closure: "not_genuine", closure_reason: "Competitor checking our rates" });
+    expect(buildStages(fake, [], TODAY)[3]).toMatchObject({ state: "closed", label: "Not genuine", note: "Competitor checking our rates", tone: "flag" });
+  });
+});
+
+describe("who closed an enquiry", () => {
+  const entry = (id: number, changed_at: string, changes: Record<string, unknown> | null, changed_by = "u1") => ({
+    id, enquiry_id: "e", reference: "SL1", action: "update" as const, changes, import_batch_id: null, changed_by, changed_at,
+  });
+
+  it("finds the latest change that set the closure", () => {
+    const audit = [
+      entry(1, "2026-11-01T08:00:00Z", { closure: { old: null, new: "not_genuine" } }, "u1"),
+      entry(2, "2026-11-02T08:00:00Z", { closure: { old: "not_genuine", new: null } }, "u2"),
+      entry(3, "2026-11-03T08:00:00Z", { closure: { old: null, new: "not_genuine" } }, "u3"),
+      entry(4, "2026-11-04T08:00:00Z", { remarks: { old: null, new: "x" } }, "u4"),
+    ];
+    expect(closedBy(audit, "not_genuine")).toEqual({ by: "u3", at: "2026-11-03T08:00:00Z" });
+    expect(closedBy(audit, "lost")).toBeNull();
+  });
 });
 
 describe("the customer's record", () => {
@@ -321,13 +344,15 @@ describe("the customer's record", () => {
     hist({ id: "q2", enquiry_date: "2026-05-03", quoted_date: "2026-05-05" }), // long ago
     hist({ id: "n1", enquiry_date: "2026-11-04" }),
     hist({ id: "c1", enquiry_date: "2026-09-01", status: "cancelled" }),
+    hist({ id: "f1", enquiry_date: "2026-08-01", quoted_date: "2026-08-01", status: "not_genuine" }),
+    hist({ id: "f2", enquiry_date: "2025-08-01", status: "not_genuine" }), // last season
     hist({ id: "old", enquiry_date: "2025-12-20", quoted_date: "2025-12-20", confirmed_date: "2026-01-10", sell_total: 999, profit: 99 }),
   ];
 
   it("adds up this year's enquiries and wins, and finds the usual time to confirm", () => {
     const s = customerStats(rows, "now", SEASON, TODAY);
     // Days from quote to confirmation: 2, 2 and 1.
-    expect(s).toMatchObject({ enquiries: 7, won: 3, sold: 1813 + 5894 + 6140, profit: 358 + 793 + 690, usualDays: 2 });
+    expect(s).toMatchObject({ enquiries: 7, notGenuine: 1, won: 3, sold: 1813 + 5894 + 6140, profit: 358 + 793 + 690, usualDays: 2 });
     // The latest win of any year, other than this enquiry.
     expect(s.lastWin?.id).toBe("w1");
     expect(s).toMatchObject({ awaiting: 1, quoted: 2, stale: 1 });

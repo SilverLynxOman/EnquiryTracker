@@ -6,25 +6,29 @@ import { Icon } from "../../components/icons";
 import { Menu, type MenuItem } from "../../components/Menu";
 import { Alert, Button, buttonClass, Spinner, StatusBadge } from "../../components/ui";
 import {
-  closeEnquiriesAsLost,
+  closeEnquiries,
   deleteEnquiry,
+  fetchAudit,
   fetchCustomerHistory,
   fetchEnquiry,
   fetchEnquiryEmails,
   fetchFollowUpHistory,
   fetchInboxCounts,
+  fetchProfileNames,
   fetchSalesPersons,
   logFollowUp,
   markQuoted,
   reopenEnquiries,
   undoFollowUp,
+  type CloseKind,
 } from "../../lib/api";
 import { displayName, shipmentLabel, TRADE_LABELS } from "../../lib/display";
-import { buildStages, customerStats, dayWithWeekday, emailSuggestion, readThread } from "../../lib/enquiryDetails";
+import { buildStages, closedBy, customerStats, dayWithWeekday, emailSuggestion, readThread } from "../../lib/enquiryDetails";
 import { errorMessage, todayIso } from "../../lib/format";
 import type { EnquiryRow, ShipmentMode } from "../../lib/types";
 import { seasonStart } from "../../lib/workdays";
 import { MarkLostDialog } from "../followups/MarkLostDialog";
+import { NotGenuineDialog } from "../followups/NotGenuineDialog";
 import { CustomerCard } from "./CustomerCard";
 import { EmailThread } from "./EmailThread";
 import { HistoryCard } from "./HistoryCard";
@@ -75,7 +79,10 @@ function EnquiryView({ id }: { id: string }) {
   const savedReference = (location.state as { saved?: string } | null)?.saved;
   const [notice, setNotice] = useState<{ text: string; undoIds?: string[] } | null>(savedReference ? { text: `Saved ${savedReference}.` } : null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [closing, setClosing] = useState(false);
+  const [closing, setClosing] = useState<CloseKind | null>(null);
+  // Shared with the History card (same query keys): who closed it, for the next-step card.
+  const audit = useQuery({ queryKey: ["audit", id], queryFn: () => fetchAudit(id), enabled: row?.status === "not_genuine" });
+  const people = useQuery({ queryKey: ["profile-names"], queryFn: fetchProfileNames, staleTime: 300_000, enabled: row?.status === "not_genuine" });
 
   useEffect(() => {
     if (!notice || notice.undoIds) return;
@@ -117,14 +124,18 @@ function EnquiryView({ id }: { id: string }) {
     },
     onError: (e) => setActionError(`The follow-up could not be saved. ${errorMessage(e)}`),
   });
-  const markLost = useMutation({
-    mutationFn: (reason: string) => closeEnquiriesAsLost([id], reason),
-    onSuccess: (ids) => {
-      setClosing(false);
-      setNotice({ text: `${row?.reference ?? "The enquiry"} is closed as lost.`, undoIds: ids });
+  const close = useMutation({
+    mutationFn: ({ kind, reason }: { kind: CloseKind; reason: string }) => closeEnquiries(kind, [id], reason),
+    onSuccess: (ids, { kind }) => {
+      setClosing(null);
+      setNotice({ text: `${row?.reference ?? "The enquiry"} is ${kind === "lost" ? "closed as lost" : "marked not genuine"}.`, undoIds: ids });
       void queryClient.invalidateQueries();
     },
   });
+  const openClose = (kind: CloseKind) => {
+    close.reset();
+    setClosing(kind);
+  };
   const reopen = useMutation({
     mutationFn: (ids: string[]) => reopenEnquiries(ids),
     onMutate: () => setActionError(null),
@@ -170,8 +181,12 @@ function EnquiryView({ id }: { id: string }) {
   }
 
   const menu: MenuItem[] = [];
-  if (canEdit && (row.status === "new" || row.status === "quoted")) menu.push({ label: "Mark lost…", icon: "close", onSelect: () => setClosing(true) });
-  if (canEdit && row.status === "lost") menu.push({ label: "Reopen", icon: "refresh", onSelect: () => reopen.mutate([id]) });
+  if (canEdit && (row.status === "new" || row.status === "quoted")) {
+    menu.push({ label: "Mark lost…", icon: "close", onSelect: () => openClose("lost") });
+    menu.push({ label: "Not genuine…", icon: "flag", onSelect: () => openClose("not_genuine") });
+  }
+  if (canEdit && (row.status === "lost" || row.status === "not_genuine")) menu.push({ label: "Reopen", icon: "refresh", onSelect: () => reopen.mutate([id]) });
+  const closer = row.closure ? closedBy(audit.data ?? [], row.closure) : null;
   menu.push({ label: "Copy reference", icon: "copy", onSelect: () => void copyReference(row) });
   if (isAdmin) {
     menu.push({
@@ -272,10 +287,11 @@ function EnquiryView({ id }: { id: string }) {
             quoting={quote.isPending}
             chasing={chase.isPending}
             reopening={reopen.isPending}
+            closedBy={closer && { name: closer.by ? (people.data?.get(closer.by) ?? "a colleague") : "the system", at: closer.at }}
             onMarkQuoted={(date) => quote.mutate(date)}
             onConfirm={confirm}
             onChase={(done) => chase.mutate(done)}
-            onMarkLost={() => setClosing(true)}
+            onMarkLost={() => openClose("lost")}
             onReopen={() => reopen.mutate([id])}
           />
           <ShipmentCard row={row} />
@@ -289,14 +305,25 @@ function EnquiryView({ id }: { id: string }) {
         </aside>
       </div>
 
-      {closing && (
+      {closing === "lost" && (
         <MarkLostDialog
           count={1}
           references={[row.reference]}
-          saving={markLost.isPending}
-          error={markLost.error}
-          onClose={() => setClosing(false)}
-          onConfirm={(reason) => markLost.mutate(reason)}
+          saving={close.isPending}
+          error={close.error}
+          onClose={() => setClosing(null)}
+          onConfirm={(reason) => close.mutate({ kind: "lost", reason })}
+        />
+      )}
+      {closing === "not_genuine" && (
+        <NotGenuineDialog
+          count={1}
+          references={[row.reference]}
+          customer={displayName(row.customer_name)}
+          saving={close.isPending}
+          error={close.error}
+          onClose={() => setClosing(null)}
+          onConfirm={(reason) => close.mutate({ kind: "not_genuine", reason })}
         />
       )}
     </div>
