@@ -2,13 +2,14 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { shownName } from "../../components/EmailView";
 import { Icon } from "../../components/icons";
+import { PriceCheckerNote } from "../../components/PriceChecker";
 import { Button, buttonClass } from "../../components/ui";
 import { daysBetween, displayName } from "../../lib/display";
 import { dayWithWeekday, whenSent, type CustomerStats, type EmailSuggestion } from "../../lib/enquiryDetails";
 import { chasedLabel, latestFollowUps, STALE_DAYS } from "../../lib/followUps";
 import { fmtDateTime, fmtMoney, fmtPercent } from "../../lib/format";
 import { waitStatus } from "../../lib/quoteWindow";
-import type { EnquiryRow, FollowUpRecord } from "../../lib/types";
+import type { EnquiryRow, FollowUpRecord, PriceChecker } from "../../lib/types";
 import { quoteDeadline } from "../../lib/workdays";
 
 type Tone = "neutral" | "primary" | "good" | "warn" | "bad" | "flag";
@@ -40,6 +41,8 @@ export interface NextStepProps {
   quoting: boolean;
   chasing: boolean;
   reopening: boolean;
+  /** The customer is a price checker (src/lib/priceCheckers.ts): said before anyone works on rates. */
+  checker?: PriceChecker;
   /** Who marked it the way it is closed now, and when (from its history); null while unknown. */
   closedBy: { name: string; at: string } | null;
   onMarkQuoted: (date: string) => void;
@@ -275,6 +278,11 @@ export function NextStepCard(props: NextStepProps) {
         {v.title}
       </h2>
       {v.body}
+      {props.checker && props.row.status === "new" && (
+        <PriceCheckerNote info={props.checker} className="mt-2.5">
+          Worth asking for the cargo-ready date and commodity before working on rates.
+        </PriceCheckerNote>
+      )}
       {v.actions && <div className="mt-3 flex flex-wrap gap-2">{v.actions}</div>}
     </section>
   );

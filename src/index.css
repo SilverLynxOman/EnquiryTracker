@@ -51,6 +51,11 @@
   --color-not-genuine: #9d174d;
   --color-not-genuine-bg: #fdf2f8;
   --color-not-genuine-line: #fbcfe8;
+  /* Price checker tag: orange, apart from the amber of "awaiting quote" that often sits next to it */
+  --color-price: #9a3412;
+  --color-price-strong: #7c2d12;
+  --color-price-bg: #fff7ed;
+  --color-price-line: #fed7aa;
   /* Small decorative dots beside the status tab labels */
   --color-await-dot: #d97706;
   --color-quoted-dot: #5546d9;

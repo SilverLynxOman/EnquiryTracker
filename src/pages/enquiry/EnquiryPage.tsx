@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { useAuth } from "../../auth/AuthProvider";
 import { Icon } from "../../components/icons";
 import { Menu, type MenuItem } from "../../components/Menu";
+import { PriceCheckerTag, usePriceCheckers } from "../../components/PriceChecker";
 import { Alert, Button, buttonClass, Spinner, StatusBadge } from "../../components/ui";
 import {
   closeEnquiries,
@@ -80,6 +81,7 @@ function EnquiryView({ id }: { id: string }) {
   const [notice, setNotice] = useState<{ text: string; undoIds?: string[] } | null>(savedReference ? { text: `Saved ${savedReference}.` } : null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [closing, setClosing] = useState<CloseKind | null>(null);
+  const checkers = usePriceCheckers();
   // Shared with the History card (same query keys): who closed it, for the next-step card.
   const audit = useQuery({ queryKey: ["audit", id], queryFn: () => fetchAudit(id), enabled: row?.status === "not_genuine" });
   const people = useQuery({ queryKey: ["profile-names"], queryFn: fetchProfileNames, staleTime: 300_000, enabled: row?.status === "not_genuine" });
@@ -187,6 +189,7 @@ function EnquiryView({ id }: { id: string }) {
   }
   if (canEdit && (row.status === "lost" || row.status === "not_genuine")) menu.push({ label: "Reopen", icon: "refresh", onSelect: () => reopen.mutate([id]) });
   const closer = row.closure ? closedBy(audit.data ?? [], row.closure) : null;
+  const checker = checkers.get(row.customer_id);
   menu.push({ label: "Copy reference", icon: "copy", onSelect: () => void copyReference(row) });
   if (isAdmin) {
     menu.push({
@@ -220,6 +223,7 @@ function EnquiryView({ id }: { id: string }) {
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-xl font-semibold text-ink">{displayName(row.customer_name)}</h1>
             <StatusBadge status={row.status} />
+            {checker && <PriceCheckerTag info={checker} />}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-body text-ink-heading">
             {mode && (
@@ -287,6 +291,7 @@ function EnquiryView({ id }: { id: string }) {
             quoting={quote.isPending}
             chasing={chase.isPending}
             reopening={reopen.isPending}
+            checker={checker}
             closedBy={closer && { name: closer.by ? (people.data?.get(closer.by) ?? "a colleague") : "the system", at: closer.at }}
             onMarkQuoted={(date) => quote.mutate(date)}
             onConfirm={confirm}
@@ -299,7 +304,7 @@ function EnquiryView({ id }: { id: string }) {
           <EmailThread items={thread} loading={emails.isLoading} error={emails.error} reference={row.reference} today={today} mailbox={counts.data?.mailboxes[0]?.email} />
         </div>
         <aside className="min-w-0 space-y-4" aria-label="Customer and route">
-          <CustomerCard row={row} today={today} stats={stats} loading={history.isLoading} error={history.error} />
+          <CustomerCard row={row} today={today} checker={checker} stats={stats} loading={history.isLoading} error={history.error} />
           <LaneCard row={row} today={today} />
           <HistoryCard enquiry={row} chases={chaseList} names={names} today={today} />
         </aside>

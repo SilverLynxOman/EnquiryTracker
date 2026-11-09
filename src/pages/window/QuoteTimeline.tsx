@@ -2,11 +2,12 @@ import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { Icon } from "../../components/icons";
 import { Menu, type MenuItem } from "../../components/Menu";
+import { PriceCheckerTag, usePriceCheckers } from "../../components/PriceChecker";
 import { Button, buttonClass } from "../../components/ui";
 import { displayName } from "../../lib/display";
 import { chasedLabel, STALE_DAYS, type FollowUpBand } from "../../lib/followUps";
 import { TIMELINE_DAYS, WINDOW_MIN_WINS, type CustomerRecord, type WaitStatus, type WindowSort, type WindowView } from "../../lib/quoteWindow";
-import { MODE_LABELS, type ShipmentMode, type WindowEnquiry } from "../../lib/types";
+import { MODE_LABELS, type PriceChecker, type ShipmentMode, type WindowEnquiry } from "../../lib/types";
 import { laneLabel } from "../../lib/workdays";
 
 /** Where a day sits on the timeline, in % of its width: today at 3%, TIMELINE_DAYS at 97%. */
@@ -63,7 +64,7 @@ function CustomerTag({ record }: { record: CustomerRecord }) {
 
 const recordText = (r: CustomerRecord) => (r.enquiries <= 1 ? "first enquiry this year" : `${r.wins} won of ${r.enquiries} this year`);
 
-function Info({ e, tag, children }: { e: WindowEnquiry; tag?: ReactNode; children: ReactNode }) {
+function Info({ e, tag, checker, children }: { e: WindowEnquiry; tag?: ReactNode; checker?: PriceChecker; children: ReactNode }) {
   const lane = laneLabel(e.pol, e.pod);
   return (
     <div className={infoCol}>
@@ -72,6 +73,7 @@ function Info({ e, tag, children }: { e: WindowEnquiry; tag?: ReactNode; childre
           {displayName(e.customer_name) || "No customer"}
         </span>
         {tag}
+        {checker && <PriceCheckerTag info={checker} />}
       </div>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-meta text-ink-muted">
         <Link to={`/enquiries/${e.id}`} className="font-medium tabular-nums text-primary hover:underline">
@@ -141,6 +143,7 @@ export function QuoteTimeline({
   onMarkNotGenuine: (e: WindowEnquiry) => void;
 }) {
   const navigate = useNavigate();
+  const checkers = usePriceCheckers();
   const boundary = 3 + (Math.min(windowDays + 0.5, TIMELINE_DAYS) / TIMELINE_DAYS) * 94;
   const pct = (share: number) => Math.round(share * 100);
   const judged = history.wins >= WINDOW_MIN_WINS;
@@ -225,7 +228,11 @@ export function QuoteTimeline({
             const wait = w.days === 0 ? "arrived today" : w.days === 1 ? "waiting since yesterday" : `waiting ${w.days} days`;
             return (
               <li key={w.row.id} className={row}>
-                <Info e={w.row} tag={<span className={`shrink-0 rounded-full px-2 py-0.5 text-meta font-medium ${s.chip}`}>{s.label}</span>}>
+                <Info
+                  e={w.row}
+                  tag={<span className={`shrink-0 rounded-full px-2 py-0.5 text-meta font-medium ${s.chip}`}>{s.label}</span>}
+                  checker={checkers.get(w.row.customer_id)}
+                >
                   <span>{wait}</span>
                   <span>· {recordText(w.customer)}</span>
                 </Info>
@@ -259,7 +266,8 @@ export function QuoteTimeline({
             const chase = q.lastChase;
             return (
               <li key={q.row.id} className={row}>
-                <Info e={q.row} tag={<CustomerTag record={q.customer} />}>
+                {/* A price checker's tag says more than "Not won yet" with this one sales person. */}
+                <Info e={q.row} tag={checkers.has(q.row.customer_id) ? undefined : <CustomerTag record={q.customer} />} checker={checkers.get(q.row.customer_id)}>
                   <span>{age}</span>
                   <span>· {recordText(q.customer)}</span>
                   {chase && (

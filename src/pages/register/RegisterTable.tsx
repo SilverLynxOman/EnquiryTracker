@@ -2,6 +2,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { Link } from "react-router";
 import { Icon } from "../../components/icons";
 import { Menu, type MenuItem } from "../../components/Menu";
+import { PriceCheckerTag, usePriceCheckers } from "../../components/PriceChecker";
 import { Button, StatusBadge } from "../../components/ui";
 import { displayName, fmtDateLong, initials, nextStep, shipmentLabel, shortPort, statusDetail, TRADE_LABELS } from "../../lib/display";
 import { fmtMoney } from "../../lib/format";
@@ -114,6 +115,7 @@ export function RegisterTable({
   actions: RowActions;
   empty: ReactNode;
 }) {
+  const checkers = usePriceCheckers();
   const colCount = 5 + Object.values(columns).filter(Boolean).length;
   // Route under the customer name when its own column is hidden (by choice, or by the narrow-table rule).
   const routeFallback = columns.route ? "@min-[720px]:hidden" : "";
@@ -210,6 +212,7 @@ export function RegisterTable({
                   <div className="line-clamp-2 font-semibold text-ink" title={r.customer_name}>
                     {displayName(r.customer_name)}
                   </div>
+                  {checkers.has(r.customer_id) && <PriceCheckerTag info={checkers.get(r.customer_id)!} className="mt-0.5" />}
                   <div className={`text-meta text-ink-heading ${routeFallback}`}>
                     <Route row={r} />
                   </div>

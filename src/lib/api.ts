@@ -5,6 +5,7 @@ import { supabase } from "./supabase";
 import type {
   AuditEntry,
   BreakdownDimension,
+  PriceChecker,
   AgentSummary,
   BreakdownRow,
   CustomerSummary,
@@ -545,6 +546,13 @@ export async function fetchMonthlyTrend(from: string, to: string): Promise<Month
     confirmed_sell: Number(r.confirmed_sell),
     confirmed_profit: Number(r.confirmed_profit),
   }));
+}
+
+// --- Price checkers ----------------------------------------------------------
+
+/** Customers quoted at least `minQuotes` times since `since` with no job booked since then (counts only). */
+export async function fetchPriceCheckers(since: string, minQuotes: number): Promise<PriceChecker[]> {
+  return unwrap(await supabase.rpc("price_checkers", { p_since: since, p_min_quotes: minQuotes }));
 }
 
 // --- The Window (a sales person's home page) and the team voyage ----------------

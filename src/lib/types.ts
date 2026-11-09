@@ -245,6 +245,15 @@ export interface PeriodStats {
   not_genuine: number;
 }
 
+/** Row of the `price_checkers` RPC: a customer quoted often in the last 12 months with no job booked in them. */
+export interface PriceChecker {
+  customer_id: string;
+  /** Enquiries quoted in the window (cancelled and not genuine ones aside). */
+  quotes: number;
+  /** Their latest confirmed job ever, or null. */
+  last_win: string | null;
+}
+
 export type BreakdownDimension = "sales_person" | "customer" | "agent" | "lane" | "mode" | "trade_type";
 
 /** Row of the `enquiry_breakdown` RPC: enquiries raised in the range, grouped by one dimension. */

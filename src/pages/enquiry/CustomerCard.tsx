@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { Link } from "react-router";
 import { Icon } from "../../components/icons";
 import { Alert, Card, Spinner } from "../../components/ui";
+import { lastJobText } from "../../lib/priceCheckers";
 import { fetchCustomerNotDuplicates, fetchCustomerSummaries } from "../../lib/api";
 import { DEFAULT_MIN_SCORE, findDuplicatePairs, matchKey, pairKey } from "../../lib/customerDuplicates";
 import { displayName, fmtDayMonth, shipmentLabel } from "../../lib/display";
@@ -10,7 +11,7 @@ import type { CustomerStats } from "../../lib/enquiryDetails";
 import { STALE_DAYS } from "../../lib/followUps";
 import { errorMessage } from "../../lib/format";
 import { DEFAULT_VIEW, writeRegisterView } from "../../lib/registerView";
-import type { CustomerSummary, EnquiryRow } from "../../lib/types";
+import type { CustomerSummary, EnquiryRow, PriceChecker } from "../../lib/types";
 import { laneLabel } from "../../lib/workdays";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -39,12 +40,15 @@ function useLookalikes(customerId: string): CustomerSummary[] {
 export function CustomerCard({
   row,
   today,
+  checker,
   stats,
   loading,
   error,
 }: {
   row: EnquiryRow;
   today: string;
+  /** Set when the customer is a price checker (src/lib/priceCheckers.ts). */
+  checker?: PriceChecker;
   stats: CustomerStats | undefined;
   loading: boolean;
   error: unknown;
@@ -69,6 +73,18 @@ export function CustomerCard({
           {row.contact_email && <span className="block break-all text-meta">{row.contact_email}</span>}
           {row.contact_phone && <span className="block text-meta tabular-nums">{row.contact_phone}</span>}
         </p>
+      )}
+
+      {checker && (
+        <div className="mt-3 rounded-control border border-price-line bg-price-bg px-3 py-2 text-meta">
+          <div className="flex items-center gap-1.5 font-semibold text-price">
+            <Icon name="tag" className="size-3.5" />
+            Price checker
+          </div>
+          <p className="mt-0.5 text-price-strong">
+            {checker.quotes} quotes in the last 12 months, no job confirmed. {lastJobText(checker)}
+          </p>
+        </div>
       )}
 
       {loading ? (
