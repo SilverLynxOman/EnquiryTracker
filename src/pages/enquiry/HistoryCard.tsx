@@ -37,8 +37,11 @@ const FIELD_LABELS: Record<string, string> = {
   requirements: "Requirements",
 };
 
+const CLOSURE_LABELS: Record<string, string> = { lost: "Lost", cancelled: "Cancelled", not_genuine: "Not genuine" };
+
 function showValue(field: string, v: unknown): ReactNode {
   if (v == null || v === "") return <span className="text-ink-muted">—</span>;
+  if (field === "closure") return CLOSURE_LABELS[String(v)] ?? String(v);
   if (field.endsWith("_id")) return <span className="text-ink-muted">(changed)</span>;
   if (field.endsWith("_date")) return fmtDate(String(v));
   return String(v);

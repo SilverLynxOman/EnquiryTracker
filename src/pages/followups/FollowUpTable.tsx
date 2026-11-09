@@ -25,6 +25,7 @@ export function FollowUpTable({
   onTogglePage,
   onConfirm,
   onMarkLost,
+  onMarkNotGenuine,
   lastFollowUp,
   mineToday,
   personName,
@@ -46,6 +47,7 @@ export function FollowUpTable({
   onTogglePage: (select: boolean) => void;
   onConfirm: (row: EnquiryRow) => void;
   onMarkLost: (row: EnquiryRow) => void;
+  onMarkNotGenuine: (row: EnquiryRow) => void;
   /** Latest follow-up logged on each row's enquiry, by anyone (follow_ups, shared with The Window). */
   lastFollowUp: ReadonlyMap<string, FollowUpRecord>;
   /** Enquiries the signed-in sales person has already chased today. */
@@ -76,7 +78,12 @@ export function FollowUpTable({
         ]
       : []),
     ...(canEdit && quoted ? [{ label: "Confirm job…", icon: "check" as const, onSelect: () => onConfirm(r) }] : []),
-    ...(canEdit ? [{ label: "Mark lost…", icon: "close" as const, onSelect: () => onMarkLost(r) }] : []),
+    ...(canEdit
+      ? [
+          { label: "Mark lost…", icon: "close" as const, onSelect: () => onMarkLost(r) },
+          { label: "Not genuine…", icon: "flag" as const, onSelect: () => onMarkNotGenuine(r) },
+        ]
+      : []),
     { label: "Open enquiry", icon: "external" as const, onSelect: () => navigate(`/enquiries/${r.id}`) },
   ];
   const colCount = canEdit ? 7 : 6;

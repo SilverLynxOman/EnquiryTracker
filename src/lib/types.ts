@@ -1,10 +1,18 @@
 export type Role = "owner" | "admin" | "editor" | "viewer";
-export type Status = "new" | "quoted" | "confirmed" | "lost" | "cancelled";
-export type Closure = "lost" | "cancelled";
+export type Status = "new" | "quoted" | "confirmed" | "lost" | "cancelled" | "not_genuine";
+export type Closure = "lost" | "cancelled" | "not_genuine";
 export type TradeType = "IMP" | "EXP" | "CT";
 export type ShipmentMode = "FCL" | "LCL" | "AIR" | "COURIER" | "RORO" | "BREAK_BULK" | "MULTI" | "OTHER";
 
-export const STATUSES: Status[] = ["new", "quoted", "confirmed", "lost", "cancelled"];
+export const STATUSES: Status[] = ["new", "quoted", "confirmed", "lost", "cancelled", "not_genuine"];
+
+/**
+ * Cancelled and not genuine enquiries (fake ones, competitors checking rates) stay in the register under their own
+ * status but are left out of every count that measures the team: enquiries raised, conversion, quoting speed.
+ */
+export function countsAsEnquiry(status: Status): boolean {
+  return status !== "cancelled" && status !== "not_genuine";
+}
 export const TRADE_TYPES: TradeType[] = ["IMP", "EXP", "CT"];
 export const SHIPMENT_MODES: ShipmentMode[] = ["FCL", "LCL", "AIR", "COURIER", "RORO", "BREAK_BULK", "MULTI", "OTHER"];
 
@@ -233,6 +241,8 @@ export interface PeriodStats {
   converted: number;
   profit: number;
   sell_total: number;
+  /** Not genuine enquiries raised in the range: left out of enquiries, quoted and conversion. */
+  not_genuine: number;
 }
 
 export type BreakdownDimension = "sales_person" | "customer" | "agent" | "lane" | "mode" | "trade_type";
@@ -276,6 +286,8 @@ export interface SalespersonSummaryRow {
   courier: number;
   other: number;
   profit: number;
+  /** Not genuine enquiries raised in the range (not in total_enquiries). */
+  not_genuine: number;
 }
 
 // --- E-mail intake (supabase/migrations/20261104202737_email_intake.sql) ----------------

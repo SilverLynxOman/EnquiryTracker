@@ -6,12 +6,12 @@ import { Button, buttonClass } from "../../components/ui";
 import { daysBetween, displayName } from "../../lib/display";
 import { dayWithWeekday, whenSent, type CustomerStats, type EmailSuggestion } from "../../lib/enquiryDetails";
 import { chasedLabel, latestFollowUps, STALE_DAYS } from "../../lib/followUps";
-import { fmtMoney, fmtPercent } from "../../lib/format";
+import { fmtDateTime, fmtMoney, fmtPercent } from "../../lib/format";
 import { waitStatus } from "../../lib/quoteWindow";
 import type { EnquiryRow, FollowUpRecord } from "../../lib/types";
 import { quoteDeadline } from "../../lib/workdays";
 
-type Tone = "neutral" | "primary" | "good" | "warn" | "bad";
+type Tone = "neutral" | "primary" | "good" | "warn" | "bad" | "flag";
 
 const TONES: Record<Tone, { box: string; label: string; quote: string }> = {
   neutral: { box: "border-line bg-table-head", label: "text-ink-muted", quote: "border-control" },
@@ -19,6 +19,7 @@ const TONES: Record<Tone, { box: string; label: string; quote: string }> = {
   good: { box: "border-confirmed/25 bg-confirmed-bg", label: "text-confirmed", quote: "border-confirmed/50" },
   warn: { box: "border-await/25 bg-await-bg", label: "text-await", quote: "border-await/50" },
   bad: { box: "border-lost/25 bg-lost-bg", label: "text-lost", quote: "border-lost/50" },
+  flag: { box: "border-not-genuine-line bg-not-genuine-bg", label: "text-not-genuine", quote: "border-not-genuine/50" },
 };
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -39,6 +40,8 @@ export interface NextStepProps {
   quoting: boolean;
   chasing: boolean;
   reopening: boolean;
+  /** Who marked it the way it is closed now, and when (from its history); null while unknown. */
+  closedBy: { name: string; at: string } | null;
   onMarkQuoted: (date: string) => void;
   onConfirm: (date: string | null) => void;
   onChase: (done: boolean) => void;
@@ -218,6 +221,26 @@ function describe(p: NextStepProps): View {
   }
 
   const reason = row.closure_reason?.trim() || "No reason recorded.";
+  if (row.status === "not_genuine") {
+    return {
+      tone: "flag",
+      title: "Not a genuine enquiry",
+      body: (
+        <>
+          <p className="mt-1 text-body font-medium text-ink">{reason}</p>
+          <p className="mt-1 text-meta text-ink-muted">
+            {p.closedBy && `Marked by ${p.closedBy.name}, ${fmtDateTime(p.closedBy.at)}. `}
+            Not counted in enquiries, conversion, quote speed or reports.
+          </p>
+        </>
+      ),
+      actions: canEdit && (
+        <Button variant="secondary" loading={p.reopening} onClick={p.onReopen}>
+          Reopen
+        </Button>
+      ),
+    };
+  }
   if (row.status === "lost") {
     return {
       tone: "bad",

@@ -91,7 +91,7 @@ export async function mockSupabase(page: Page): Promise<Calls> {
         calls.imported.push(...p_rows);
         return json({ inserted: p_rows.length, updated: 0 });
       }
-      if (fn === "dashboard_stats") return json({ enquiries: 0, quoted: 0, confirmed: 0, converted: 0, profit: 0, sell_total: 0 });
+      if (fn === "dashboard_stats") return json({ enquiries: 0, quoted: 0, confirmed: 0, converted: 0, profit: 0, sell_total: 0, not_genuine: 0 });
       if (fn === "email_inbox_counts") return json({ drafts: 0, review: 0, awaiting: 0, mailboxes: [] });
       if (fn === "team_confirmed_by_month" || fn === "team_wins" || fn === "salesperson_summary") return json([]);
       return json([]);

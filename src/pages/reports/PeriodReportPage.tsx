@@ -125,18 +125,18 @@ function subtitle(p: Period, today: string): string {
   return days === 7 ? "Weekly report · Saturday to Friday" : `Report over ${days} days`;
 }
 
-function tiles(f: ReportFigures, prev: ReportFigures | null, earlier: number, cancelled: number, pace: number | null, within: string): KpiTileData[] {
+function tiles(f: ReportFigures, prev: ReportFigures | null, earlier: number, left: { cancelled: number; notGenuine: number }, pace: number | null, within: string): KpiTileData[] {
   const margin = (x: ReportFigures) => (x.sales ? (x.profit / x.sales) * 100 : null);
   const pct = f.enquiries ? Math.round((f.quoted / f.enquiries) * 100) : null;
   return [
     {
       colour: "enquiries",
       label: "Enquiries",
-      hint: `Enquiries raised ${within}, cancelled not counted`,
+      hint: `Enquiries raised ${within}, cancelled and not genuine not counted`,
       kind: "count",
       value: f.enquiries,
       previous: prev?.enquiries,
-      sub: cancelled ? `${cancelled} cancelled` : undefined,
+      sub: [left.cancelled ? `${left.cancelled} cancelled` : "", left.notGenuine ? `${left.notGenuine} not genuine` : ""].filter(Boolean).join(" · ") || undefined,
     },
     {
       colour: "quoted",
@@ -282,7 +282,7 @@ export default function PeriodReportPage({ kind }: { kind: PeriodKind }) {
         data.isLoading && <Spinner />
       ) : (
         <div className={`space-y-4 transition-opacity ${stale ? "opacity-60" : ""}`} aria-busy={stale}>
-          <KpiTiles tiles={tiles(d.figures, prevFigures, d.report.earlier.length, d.report.cancelled, monthPace(period, today, d.figures.profit), w.within)} vs={cmp.label} />
+          <KpiTiles tiles={tiles(d.figures, prevFigures, d.report.earlier.length, { cancelled: d.report.cancelled, notGenuine: d.report.notGenuine }, monthPace(period, today, d.figures.profit), w.within)} vs={cmp.label} />
 
           {empty ? (
             <EmptyPeriod

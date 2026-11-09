@@ -4,10 +4,11 @@ import { Link } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { SalespersonTable } from "../components/SalespersonTable";
 import { Alert, Card, Empty, Spinner } from "../components/ui";
-import { countRegister, fetchFollowUps, fetchSalespersonSummary } from "../lib/api";
+import { countRegister, fetchFollowUps, fetchSalesPersons, fetchSalespersonSummary } from "../lib/api";
 import { displayName } from "../lib/display";
 import { addDays, errorMessage, firstOfMonth, fmtDate, todayIso } from "../lib/format";
 import { STALE_DAYS, staleQuoteFilters } from "../lib/followUps";
+import { DEFAULT_VIEW, writeRegisterView } from "../lib/registerView";
 import type { EnquiryRow } from "../lib/types";
 import { KpiStrip } from "./dashboard/KpiStrip";
 import { PersonPicker } from "./window/PersonPicker";
@@ -58,6 +59,14 @@ export default function DashboardPage() {
   const awaitingQuote = useQuery({ queryKey: ["dashboard", "follow", "new", since], queryFn: () => fetchFollowUps("new", since) });
   const awaitingConfirm = useQuery({ queryKey: ["dashboard", "follow", "quoted", since], queryFn: () => fetchFollowUps("quoted", since) });
   const stale = useQuery({ queryKey: ["dashboard", "stale-quotes", today], queryFn: () => countRegister(staleQuoteFilters(today)) });
+  const salesPersons = useQuery({ queryKey: ["sales-persons"], queryFn: fetchSalesPersons, staleTime: 300_000 });
+
+  // A count of not-genuine enquiries opens them in the register: this month, that sales person.
+  const notGenuineLink = (name: string) => {
+    const sp = salesPersons.data?.find((p) => p.name === name);
+    if (!sp) return null;
+    return `/enquiries?${writeRegisterView({ ...DEFAULT_VIEW, status: "not_genuine", period: "this_month", salesPersonId: sp.id }).toString()}`;
+  };
 
   const error = people.error ?? awaitingQuote.error ?? awaitingConfirm.error;
 
@@ -97,7 +106,7 @@ export default function DashboardPage() {
         ) : !people.data?.length ? (
           <Empty>No enquiries this month yet.</Empty>
         ) : (
-          <SalespersonTable rows={people.data} />
+          <SalespersonTable rows={people.data} notGenuineLink={notGenuineLink} />
         )}
       </Card>
     </div>

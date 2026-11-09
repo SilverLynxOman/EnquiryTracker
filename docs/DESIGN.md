@@ -63,6 +63,7 @@ Never hard-code a hex value or a pixel font size in a component. Use a token, or
 | `confirmed` | Confirmed | check | `#166534` | `#F0FDF4` | `#16A34A` |
 | `lost` | Lost | ✕ | `#991B1B` | `#FEF2F2` | `#DC2626` |
 | `cancelled` | Cancelled | ban | `#526075` | `#F1F3F7` | `#8A94A6` |
+| `not_genuine` | Not genuine | flag | `#9D174D` | `#FDF2F8` | `#DB2777` |
 
 - **Neutral by default:** keep most surfaces neutral. Strong violet is for the primary action, the active navigation item, links and selection markers only.
 - **Contrast:** text pairs meet WCAG AA, 4.5:1 or better (see the table values). Don't use grey lighter than `ink-muted` for text.
@@ -142,7 +143,7 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 
 ### Enquiry page
 - **Addresses:** `/enquiries/<id>` shows the enquiry and `/enquiries/<id>/edit` is the form. Confirm job opens the form with `?confirm=1` (today) or `?confirm=<date>` (the day the customer said yes). Saving returns to the enquiry page, which says it was saved.
-- **Top:** reference, customer, status, mode and quantity, direction, route and sales person; Edit, and a ⋯ menu with Mark lost…, Reopen, Copy reference and, for admins, Delete.
+- **Top:** reference, customer, status, mode and quantity, direction, route and sales person; Edit, and a ⋯ menu with Mark lost…, Not genuine…, Reopen, Copy reference and, for admins, Delete.
 - **Progress line:** received (and where from), quoted (how fast, against the end of the next working day; due or overdue while waiting), the wait and its follow-ups, then won or lost. One current step, in violet.
 - **Next step card:** first in the main column. Its tone follows the stage: violet to quote, amber when the quote is due today or has waited 14 days or more, red when overdue or lost, green for a yes or a confirmed job. It holds the stage's one filled button: Mark quoted, Log a follow-up (users linked to a sales person, logged as them), Confirm job, Add the rates or Reopen.
 - **Read from the e-mails:** a quote e-mailed to the customer (a price in OMR with the words of an offer) while the register still says awaiting quote suggests Mark quoted on that day; the customer's go-ahead after the quote suggests Confirm job, and says when they also ask for a better rate. Both show the e-mail they came from, and nothing changes without a click. The rules and their tests are in `src/lib/enquiryDetails.ts`.
@@ -172,8 +173,16 @@ Shadows are only for things that float: menus, the drawer when it overlays, and 
 - **Tabs by age:** quoted 14–30 days ago (default), 31–90 days, over 90 days, not quoted. Counts follow the search and sales-person filter, like the status tabs.
 - **Rows:** reference over the quote date, customer over route, sales person, quote amount, waiting days over the last chase ("Chased 3 days ago", with who in the tooltip), then the row's one next step and the ⋯ menu (Followed up today, Confirm job, Mark lost…, Edit enquiry). Below 860 px of table width, the next step moves into the menu.
 - **Next step by person:** a sales person *chases*: *Followed up* (outline) logs today's follow-up and becomes a pressed "✓ Chased today" (ghost) that undoes it. Anyone else who edits gets *Confirm job*. Enquiries never quoted have no follow-up button.
-- **Bulk:** the header tick box selects the page; *Select all N* selects the whole tab. *Mark lost…* opens a dialog with one reason (suggestions, free text). After saving, a success alert offers *Undo*; it stays until dismissed.
+- **Bulk:** the header tick box selects the page; *Select all N* selects the whole tab. *Mark lost…* opens a dialog with one reason (suggestions, free text); *Not genuine…* opens the not-genuine dialog (below). After saving, a success alert offers *Undo*; it stays until dismissed.
 - **Sales users** see their own enquiries first (`sp` in the URL overrides it).
+
+### Not genuine enquiries
+- **What:** fake or spam enquiries, competitors checking our rates, contact details that don't work. Only the sales person can tell, so any editor (a sales person on their own enquiries too) closes an open enquiry as *Not genuine*; viewers cannot. Stored as `closure = 'not_genuine'`; a confirmation date entered later still wins, as for lost.
+- **Where:** *Not genuine…* in the ⋯ menu of the enquiry page, a Register row, a row on The Window and on Follow-ups, and as a bulk action on Follow-ups. *Reopen* (enquiry page, or *Undo* straight after) puts it back.
+- **Dialog** (`src/pages/followups/NotGenuineDialog.tsx`): one reason from *Fake or spam enquiry*, *Competitor checking our rates*, *Contact details don't work* or *Other*, and a note (optional; required with *Other*). The reason is saved as "Reason — note". The dialog says what happens: the enquiry leaves the counts, nothing is deleted, managers see the numbers.
+- **Look:** pink status badge with a flag icon, its own Register tab, a pink next-step card ("Not a genuine enquiry", the reason, who marked it and when, *Reopen*) and a flag at the end of the progress line. The customer card says how many of the customer's enquiries this year were marked not genuine.
+- **Counts:** left out of enquiries raised, quotes, conversion, quoting speed, analytics and the daily / weekly / monthly reports, as cancelled ones are (`countsAsEnquiry()` in `src/lib/types.ts`; the SQL report functions in `supabase/migrations/20261109100000_not_genuine.sql`). The report tiles and the Dashboard say how many were left out, with a link to them.
+- **Safeguard:** leaving them out raises a person's conversion, so the sales-person table gets a *Not genuine* column (count and share of that person's enquiries, linking to the list) whenever anyone has marked one. A person with at least 5, and at least twice the team's share, gets an amber "Much higher than the team" label (`notGenuineIsHigh()` in `src/lib/reports.ts`).
 
 ### Settings (users and access)
 - **Where:** `/settings` (the old `/admin/users` leads there), from the avatar menu (*Settings*), for the owner only. Anyone else who opens the address gets a short message, and the server refuses them the list (`admin_list_users()`), every change (Row Level Security) and every Auth action (the `user-admin` Edge Function).

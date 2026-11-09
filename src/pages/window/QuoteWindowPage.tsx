@@ -4,7 +4,7 @@ import { useNavigate } from "react-router";
 import { useAuth } from "../../auth/AuthProvider";
 import { Alert, Button, Spinner } from "../../components/ui";
 import {
-  closeEnquiriesAsLost,
+  closeEnquiries,
   countRegister,
   fetchFollowUpHistory,
   fetchHomePrefs,
@@ -15,6 +15,7 @@ import {
   logFollowUp,
   markQuoted,
   reopenEnquiries,
+  type CloseKind,
   saveHomePrefs,
   undoFollowUp,
 } from "../../lib/api";
@@ -37,6 +38,7 @@ import { DEFAULT_VIEW, writeRegisterView } from "../../lib/registerView";
 import type { HomePrefs, ShipmentMode, WindowEnquiry } from "../../lib/types";
 import { dayLabel, monthLabel, monthPace, previousMonth, seasonStart } from "../../lib/workdays";
 import { MarkLostDialog } from "../followups/MarkLostDialog";
+import { NotGenuineDialog } from "../followups/NotGenuineDialog";
 import { ModeFilter } from "./ModeFilter";
 import { MonthWinsCard, WonCard } from "./MonthWins";
 import { PersonPicker } from "./PersonPicker";
@@ -110,8 +112,8 @@ export default function QuoteWindowPage({ salesPersonId }: { salesPersonId: stri
   });
 
   const [notice, setNotice] = useState<string | null>(null);
-  const [closing, setClosing] = useState<WindowEnquiry | null>(null);
-  const [closed, setClosed] = useState<{ ids: string[]; reference: string } | null>(null);
+  const [closing, setClosing] = useState<{ kind: CloseKind; e: WindowEnquiry } | null>(null);
+  const [closed, setClosed] = useState<{ kind: CloseKind; ids: string[]; reference: string } | null>(null);
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => setNotice(null), 4000);
@@ -134,10 +136,10 @@ export default function QuoteWindowPage({ salesPersonId }: { salesPersonId: stri
     },
   });
   const markLost = useMutation({
-    mutationFn: ({ e, reason }: { e: WindowEnquiry; reason: string }) => closeEnquiriesAsLost([e.id], reason),
-    onSuccess: (ids, { e }) => {
+    mutationFn: ({ kind, e, reason }: { kind: CloseKind; e: WindowEnquiry; reason: string }) => closeEnquiries(kind, [e.id], reason),
+    onSuccess: (ids, { kind, e }) => {
       setClosing(null);
-      setClosed({ ids, reference: e.reference });
+      setClosed({ kind, ids, reference: e.reference });
       void queryClient.invalidateQueries();
     },
   });
@@ -191,7 +193,7 @@ export default function QuoteWindowPage({ salesPersonId }: { salesPersonId: stri
             </div>
           }
         >
-          {closed.ids.length ? `${closed.reference} marked as lost.` : `${closed.reference} was already closed, so nothing changed.`}
+          {closed.ids.length ? `${closed.reference} ${closed.kind === "lost" ? "marked as lost" : "marked not genuine"}.` : `${closed.reference} was already closed, so nothing changed.`}
         </Alert>
       )}
       {actionError && <Alert>That did not save. {errorMessage(actionError)}</Alert>}
@@ -238,7 +240,8 @@ export default function QuoteWindowPage({ salesPersonId }: { salesPersonId: stri
             onQuoted={(e) => quote.mutate(e)}
             onChase={(e, done) => chase.mutate({ e, done })}
             onWon={(e) => navigate(`/enquiries/${e.id}/edit?confirm=1`)}
-            onMarkLost={(e) => (markLost.reset(), setClosing(e))}
+            onMarkLost={(e) => (markLost.reset(), setClosing({ kind: "lost", e }))}
+            onMarkNotGenuine={(e) => (markLost.reset(), setClosing({ kind: "not_genuine", e }))}
           />
         </div>
         <aside className="flex min-w-0 flex-[1_1_20rem] flex-col gap-4">
@@ -262,14 +265,25 @@ export default function QuoteWindowPage({ salesPersonId }: { salesPersonId: stri
         </aside>
       </div>
 
-      {closing && (
+      {closing?.kind === "lost" && (
         <MarkLostDialog
           count={1}
-          references={[closing.reference]}
+          references={[closing.e.reference]}
           saving={markLost.isPending}
           error={markLost.error}
           onClose={() => setClosing(null)}
-          onConfirm={(reason) => markLost.mutate({ e: closing, reason })}
+          onConfirm={(reason) => markLost.mutate({ kind: "lost", e: closing.e, reason })}
+        />
+      )}
+      {closing?.kind === "not_genuine" && (
+        <NotGenuineDialog
+          count={1}
+          references={[closing.e.reference]}
+          customer={displayName(closing.e.customer_name)}
+          saving={markLost.isPending}
+          error={markLost.error}
+          onClose={() => setClosing(null)}
+          onConfirm={(reason) => markLost.mutate({ kind: "not_genuine", e: closing.e, reason })}
         />
       )}
       {notice && (

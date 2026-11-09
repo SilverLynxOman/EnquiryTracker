@@ -125,6 +125,7 @@ export const STATUS_META: Record<Status, { label: string; icon: IconName; badge:
   confirmed: { label: "Confirmed", icon: "check", badge: "bg-confirmed-bg text-confirmed", dot: "bg-confirmed-dot" },
   lost: { label: "Lost", icon: "close", badge: "bg-lost-bg text-lost", dot: "bg-lost-dot" },
   cancelled: { label: "Cancelled", icon: "ban", badge: "bg-cancelled-bg text-cancelled", dot: "bg-cancelled-dot" },
+  not_genuine: { label: "Not genuine", icon: "flag", badge: "bg-not-genuine-bg text-not-genuine", dot: "bg-not-genuine-dot" },
 };
 
 /** Status as text plus an icon, never colour alone. */
