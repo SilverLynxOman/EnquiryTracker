@@ -800,7 +800,7 @@ export async function fetchRelatedEnquiryIds(
 
 export async function fetchEnquiryEmails(enquiryId: string): Promise<EmailMessage[]> {
   return unwrap(
-    await supabase.from("email_messages").select(EMAIL_COLUMNS).eq("enquiry_id", enquiryId).order("received_at", { ascending: true }),
+    await supabase.from("email_messages").select(`${EMAIL_COLUMNS}, ai_result`).eq("enquiry_id", enquiryId).order("received_at", { ascending: true }),
   );
 }
 

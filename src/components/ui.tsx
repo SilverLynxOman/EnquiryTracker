@@ -15,9 +15,15 @@ const BUTTON_VARIANTS = {
 
 export type ButtonVariant = keyof typeof BUTTON_VARIANTS;
 
-export const buttonClass = (variant: ButtonVariant = "primary", size: "sm" | "md" = "md", extra = "") =>
-  `inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control text-control font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
-    size === "sm" ? "h-8 px-2.5" : "h-9 px-3"
+/**
+ * A button's classes. With wrap, a label too long for the room (a whole e-mail address in "Chase …") breaks onto
+ * more lines inside the button instead of spilling out of it; a label that fits stays on one line at the usual height.
+ */
+export const buttonClass = (variant: ButtonVariant = "primary", size: "sm" | "md" = "md", extra = "", wrap = false) =>
+  `inline-flex items-center justify-center gap-1.5 rounded-control text-control font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
+    wrap
+      ? `max-w-full whitespace-normal wrap-anywhere text-center ${size === "sm" ? "min-h-8 px-2.5 py-1" : "min-h-9 px-3 py-1.5"}`
+      : `whitespace-nowrap ${size === "sm" ? "h-8 px-2.5" : "h-9 px-3"}`
   } ${BUTTON_VARIANTS[variant]} ${extra}`;
 
 export function Button({
@@ -26,13 +32,14 @@ export function Button({
   className = "",
   type = "button",
   loading = false,
+  wrap = false,
   disabled,
   children,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: "sm" | "md"; loading?: boolean }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: "sm" | "md"; loading?: boolean; wrap?: boolean }) {
   return (
-    <button type={type} className={buttonClass(variant, size, className)} disabled={disabled || loading} aria-busy={loading || undefined} {...props}>
-      {loading && <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />}
+    <button type={type} className={buttonClass(variant, size, className, wrap)} disabled={disabled || loading} aria-busy={loading || undefined} {...props}>
+      {loading && <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />}
       {children}
     </button>
   );
@@ -165,7 +172,8 @@ export function Alert({
   }[kind];
   return (
     <div role={kind === "error" ? "alert" : "status"} className={`flex flex-wrap items-center justify-between gap-2 rounded-control border px-3 py-2 text-body ${styles}`}>
-      <div>{children}</div>
+      {/* The text may shrink and break a long e-mail address rather than widen the page; the action wraps under it. */}
+      <div className="min-w-0 grow basis-48 break-words">{children}</div>
       {action}
     </div>
   );

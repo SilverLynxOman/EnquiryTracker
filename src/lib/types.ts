@@ -337,6 +337,8 @@ export interface EmailMessage {
   suggested_enquiry_id: string | null;
   enquiry_id: string | null;
   draft_id: string | null;
+  /** What the classifier extracted, on AI-classified mail; loaded for the enquiry page only. */
+  ai_result?: unknown;
 }
 
 /** A reply sent from the app through Gmail (public.email_replies, written by the gmail-send Edge Function). */

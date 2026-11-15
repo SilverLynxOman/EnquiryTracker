@@ -77,7 +77,18 @@ export function AttachmentLink({ file }: { file: EmailAttachment }) {
 }
 
 /** One e-mail: sender, date, what they wrote (history folded away), attachments, link to Gmail. */
-export function EmailView({ email, mailbox, showSummary = true }: { email: EmailMessage; mailbox?: string | null; showSummary?: boolean }) {
+export function EmailView({
+  email,
+  mailbox,
+  showSummary = true,
+  gmail = true,
+}: {
+  email: EmailMessage;
+  mailbox?: string | null;
+  showSummary?: boolean;
+  /** The "Open in Gmail" link; off for readers without the mailbox. */
+  gmail?: boolean;
+}) {
   const [showEarlier, setShowEarlier] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const { text, earlier } = splitBody(email.body_text);
@@ -120,20 +131,24 @@ export function EmailView({ email, mailbox, showSummary = true }: { email: Email
           )}
         </div>
       )}
-      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        {email.attachments.map((a, i) => (
-          <AttachmentLink key={`${a.filename}-${i}`} file={a} />
-        ))}
-        <a
-          href={gmailThreadUrl(email.gmail_thread_id, mailbox)}
-          target="_blank"
-          rel="noreferrer"
-          className="ml-auto inline-flex items-center gap-1 text-meta text-ink-muted hover:text-primary hover:underline"
-        >
-          Open in Gmail
-          <Icon name="external" className="size-3.5" />
-        </a>
-      </footer>
+      {(gmail || email.attachments.length > 0) && (
+        <footer className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {email.attachments.map((a, i) => (
+            <AttachmentLink key={`${a.filename}-${i}`} file={a} />
+          ))}
+          {gmail && (
+            <a
+              href={gmailThreadUrl(email.gmail_thread_id, mailbox)}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-auto inline-flex items-center gap-1 text-meta text-ink-muted hover:text-primary hover:underline"
+            >
+              Open in Gmail
+              <Icon name="external" className="size-3.5" />
+            </a>
+          )}
+        </footer>
+      )}
     </article>
   );
 }

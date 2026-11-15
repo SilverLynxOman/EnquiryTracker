@@ -97,6 +97,18 @@
   --color-lane-wait: #0f766e;
   --color-lane-mail: #1d4ed8;
   --color-lane-mail-bg: #e6eefe;
+  /*
+   * The enquiry page (docs/DESIGN.md, "Enquiry page"): the customer name, the two figures of the glance band, and who
+   * is talking. Party colours mark the speaker, never a state (each passes 4.5:1 on its ground and on white).
+   */
+  --text-headline: 1.25rem; /* 20px: the customer name on the enquiry page */
+  --text-headline--line-height: 1.75rem;
+  --text-dial: 1.5rem; /* 24px: the offer and the margin in the glance band */
+  --text-dial--line-height: 1.875rem;
+  --color-party-customer: #1d4ed8;
+  --color-party-customer-bg: #e6eefe;
+  --color-party-agent: #0f766e;
+  --color-party-agent-bg: #e6f4f1;
   /* Team-ship containers by sales person, 3:1 or better on the sky; crew-0 is "no sales person" */
   --color-crew-0: #6b7280;
   --color-crew-1: #c2410c;

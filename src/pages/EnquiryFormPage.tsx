@@ -15,6 +15,8 @@ import {
   saveEnquiry,
 } from "../lib/api";
 import { draftToPayload } from "../lib/emailDrafts";
+import { USD_PER } from "../lib/brief/constants";
+import type { Currency, FormPrefill } from "../lib/brief/types";
 import { describeCommission, mentionsCommission, parseCommission } from "../lib/commission";
 import { errorMessage, fmtDate, fmtMoney, todayIso } from "../lib/format";
 import { parseHouseSubject } from "../lib/houseSubject";
@@ -98,6 +100,122 @@ function emptyForm(): FormState {
     contact_phone: "",
     requirements: "",
   };
+}
+
+const PREFILL_FIELDS = [
+  "quoted_date",
+  "confirmed_date",
+  "sell_total",
+  "buy_total",
+  "agent_name",
+  "qty_text",
+  "trade_type",
+  "pol",
+  "pod",
+  "contact_name",
+  "contact_email",
+  "contact_phone",
+] as const satisfies readonly (keyof FormPrefill & Key)[];
+
+/** Currencies tied to the US dollar: their rate is exact, the others' only about right. */
+const PEGGED = new Set(["USD", "OMR", "AED", "SAR", "QAR"]);
+
+/**
+ * A USD suggestion in the form's own currency. A whole USD figure that a whole amount explains (OMR 471 × 2.6 =
+ * USD 1,224.6, shown as 1,225) goes back to that whole amount. Null when the currency has no known rate.
+ */
+function fromUsd(usd: number, currency: string): number | null {
+  if (currency === "USD") return round2(usd);
+  const rate = Object.hasOwn(USD_PER, currency) ? USD_PER[currency as Currency] : null;
+  if (!rate) return null;
+  const amount = usd / rate;
+  const whole = Math.round(amount);
+  return Number.isInteger(usd) && Math.round(whole * rate) === usd ? whole : round2(amount);
+}
+
+/**
+ * The enquiry page's suggestions on top of the register's values: only empty fields are filled, unless the
+ * suggestion names the field as one it may replace (a rates update, a route the e-mails changed). Amounts come in
+ * USD and are entered in the form's currency. A new quantity sets the units and container as typing it does, and
+ * totals worked out as rate × units follow. A new contact address drops the old person's name and phone.
+ * The notes say what was filled, and what was converted or worked out again.
+ */
+export function applyPrefill(form: FormState, prefill: FormPrefill): { form: FormState; buy: boolean; sell: boolean; notes: string[] } {
+  const next = { ...form };
+  const replace = new Set(prefill.replace ?? []);
+  const notes = [...prefill.notes];
+  const currency = form.currency.trim().toUpperCase() || "USD";
+  let buy = false;
+  let sell = false;
+  for (const key of PREFILL_FIELDS) {
+    const value = prefill[key];
+    if (value == null || value === "") continue;
+    if (next[key] !== "" && !replace.has(key)) continue;
+    let text: string;
+    if (typeof value === "number") {
+      // FormPrefill amounts are USD; the form keeps the enquiry's own currency.
+      const label = key === "buy_total" ? "Buy" : "Sell";
+      const amount = fromUsd(value, currency);
+      if (amount == null) {
+        notes.push(`${label} USD ${fmtMoney(round2(value))} is not filled in: this enquiry is in ${currency}, which cannot be converted here.`);
+        continue;
+      }
+      if (currency !== "USD") {
+        const rate = USD_PER[currency as Currency];
+        notes.push(
+          `${label} USD ${fmtMoney(round2(value))} is entered as ${currency} ${fmtMoney(amount)}, as this enquiry is in ${currency} (${currency} 1 ${PEGGED.has(currency) ? "=" : "≈"} USD ${rate}).`,
+        );
+      }
+      text = String(amount);
+    } else {
+      text = UPPERCASE_FIELDS.includes(key) ? value.toUpperCase() : value;
+    }
+    next[key] = text;
+    if (key === "qty_text") {
+      // As typing the quantity does: a quantity without units or a container clears them.
+      const q = parseQty(text);
+      next.shipment_mode = q.mode ?? next.shipment_mode;
+      next.units = q.units == null ? "" : String(q.units);
+      next.container_type = q.containerType ?? "";
+    }
+    if (key === "buy_total") buy = true;
+    if (key === "sell_total") sell = true;
+  }
+  if (prefill.shipment_mode && (next.shipment_mode === "" || replace.has("shipment_mode")) && (SHIPMENT_MODES as string[]).includes(prefill.shipment_mode)) {
+    next.shipment_mode = prefill.shipment_mode;
+  }
+
+  // New units: a total that was rate × units is worked out again, unless the suggestion gave that total itself.
+  if (next.units !== form.units) {
+    const again: string[] = [];
+    if (!buy && totalIsAuto(numOrNull(form.buy_rate), numOrNull(form.units), numOrNull(form.buy_total))) {
+      const total = calcTotal(next.buy_rate, next.units);
+      if (total !== next.buy_total) again.push("buy");
+      next.buy_total = total;
+    }
+    if (!sell && totalIsAuto(numOrNull(form.sell_rate), numOrNull(form.units), numOrNull(form.sell_total))) {
+      const total = calcTotal(next.sell_rate, next.units);
+      if (total !== next.sell_total) again.push("sell");
+      next.sell_total = total;
+    }
+    if (again.length) notes.push(`${again.length === 2 ? "Buy and sell totals" : again[0] === "buy" ? "Buy total" : "Sell total"} worked out again for the new quantity (rate × units).`);
+  }
+
+  // Another address is another person: the old contact's name and phone go, unless the suggestion gives new ones.
+  const oldAddress = form.contact_email.trim().toLowerCase();
+  if (replace.has("contact_email") && prefill.contact_email?.trim() && oldAddress && next.contact_email.trim().toLowerCase() !== oldAddress) {
+    const cleared: string[] = [];
+    if (replace.has("contact_name") && !prefill.contact_name?.trim() && next.contact_name) {
+      next.contact_name = "";
+      cleared.push("name");
+    }
+    if (replace.has("contact_phone") && !prefill.contact_phone?.trim() && next.contact_phone) {
+      next.contact_phone = "";
+      cleared.push("phone");
+    }
+    if (cleared.length) notes.push(`Contact ${cleared.join(" and ")} cleared: ${cleared.length === 2 ? "they were" : "it was"} for ${form.contact_email.trim()}.`);
+  }
+  return { form: next, buy, sell, notes };
 }
 
 function toForm(e: EnquiryRow): FormState {
@@ -295,18 +413,28 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
   const [message, setMessage] = useState<string | null>(savedReference ? `Saved ${savedReference}.` : null);
   const [showChecks, setShowChecks] = useState(false);
 
+  // What the enquiry page read from the e-mails, suggested for this form; nothing is saved until Save.
+  const [prefill] = useState(() => (id ? ((location.state as { prefill?: FormPrefill } | null)?.prefill ?? null) : null));
+  /** The suggestion's notes, with what filling the form converted or worked out again. */
+  const [prefillNotes, setPrefillNotes] = useState<string[]>(() => prefill?.notes ?? []);
+
   useEffect(() => {
     if (!existing.data || loaded) return;
     const e = existing.data;
-    const next = toForm(e);
+    let next = toForm(e);
     // ?confirm=1 confirms today; ?confirm=YYYY-MM-DD on the day the customer said yes (the enquiry page's suggestion).
     const confirmOn = searchParams.get("confirm");
     if (confirmOn && !next.confirmed_date) next.confirmed_date = /^\d{4}-\d{2}-\d{2}$/.test(confirmOn) ? confirmOn : todayIso();
+    const filled = prefill ? applyPrefill(next, prefill) : null;
+    if (filled) {
+      next = filled.form;
+      setPrefillNotes(filled.notes);
+    }
     setForm(next);
-    setAutoBuy(totalIsAuto(e.buy_rate, e.units, e.buy_total));
-    setAutoSell(totalIsAuto(e.sell_rate, e.units, e.sell_total));
+    setAutoBuy(!filled?.buy && totalIsAuto(e.buy_rate, e.units, e.buy_total));
+    setAutoSell(!filled?.sell && totalIsAuto(e.sell_rate, e.units, e.sell_total));
     setLoaded(true);
-  }, [existing.data, loaded, searchParams]);
+  }, [existing.data, loaded, searchParams, prefill]);
 
   useEffect(() => {
     if (!draft.data || loaded) return;
@@ -475,6 +603,20 @@ function EnquiryForm({ id, draftId }: { id: string | null; draftId: string | nul
       </div>
 
       {message && <Alert kind="success">{message}</Alert>}
+      {prefill && (
+        <Alert kind="info">
+          <div>
+            <p className="font-medium">Filled from the e-mails. Check before you save.</p>
+            {prefillNotes.length > 0 && (
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-meta">
+                {prefillNotes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Alert>
+      )}
       {draft.data?.summary && (
         <Alert kind="info">
           Read from the e-mail: {draft.data.summary} Check the details, then create the enquiry. The e-mail is shown below.
