@@ -4,13 +4,26 @@ import { Link } from "react-router";
 import { Alert, Card, Spinner } from "../../components/ui";
 import { fetchLaneHistory } from "../../lib/api";
 import { displayName, fmtDayMonth, shipmentLabel } from "../../lib/display";
+import type { LaneBenchmark } from "../../lib/enquiryBrief";
 import { laneStats } from "../../lib/enquiryDetails";
 import { errorMessage, fmtMoney } from "../../lib/format";
 import { MODE_LABELS, type EnquiryRow } from "../../lib/types";
 import { laneLabel, seasonStart } from "../../lib/workdays";
 
+/** Priced wins a route needs before its usual profit is said. */
+const BENCHMARK_WINS = 3;
+
 /** Earlier enquiries on the same route and mode this year, with what the won ones were bought and sold for. */
-export function LaneCard({ row, today }: { row: EnquiryRow; today: string }) {
+export function LaneCard({
+  row,
+  today,
+  benchmark,
+}: {
+  row: EnquiryRow;
+  today: string;
+  /** The route's usual profit and who wins it: one line of information, with no colour and no verdict. */
+  benchmark?: LaneBenchmark | null;
+}) {
   const since = seasonStart(today);
   const pol = row.pol?.trim() ?? "";
   const pod = row.pod?.trim() ?? "";
@@ -23,6 +36,7 @@ export function LaneCard({ row, today }: { row: EnquiryRow; today: string }) {
   });
   const stats = useMemo(() => (lane.data ? laneStats(lane.data, row, since) : null), [lane.data, row, since]);
   const mode = row.shipment_mode ? MODE_LABELS[row.shipment_mode] : "";
+  const usual = benchmark && benchmark.pricedWins >= BENCHMARK_WINS ? benchmark.text.trim() : "";
 
   return (
     <Card title={hasRoute ? `${laneLabel(row.pol, row.pod)} before` : "This route before"}>
@@ -39,6 +53,7 @@ export function LaneCard({ row, today }: { row: EnquiryRow; today: string }) {
               Other {mode ? `${mode} ` : ""}enquiries this year: <b className="tabular-nums text-ink">{stats.enquiries}</b> · won{" "}
               <b className="tabular-nums text-confirmed">{stats.won}</b> · still open <b className="tabular-nums text-ink">{stats.open}</b>
             </p>
+            {usual && <p className="mt-2 break-words text-body tabular-nums text-ink-heading">{usual}</p>}
             {stats.wins.length > 0 ? (
               <ul className="mt-2">
                 {stats.wins.map((w) => (

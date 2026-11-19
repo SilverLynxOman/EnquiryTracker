@@ -4,6 +4,7 @@ import {
   MODE_LABELS,
   SHIPMENT_MODES,
   TRADE_TYPE_LABELS,
+  countsAsEnquiry,
   type BreakdownDimension,
   type EnquiryRow,
   type SalespersonSummaryRow,
@@ -123,9 +124,10 @@ export interface PeriodReport {
   raised: EnquiryRow[];
   /** Enquiries raised before the period and confirmed in it, oldest first. */
   earlier: EnquiryRow[];
-  /** "NO. OF ENQUIRIES": raised in the period, cancelled ones not counted (as in the sales-person summary). */
+  /** "NO. OF ENQUIRIES": raised in the period, cancelled and not genuine ones not counted (as in the sales-person summary). */
   enquiries: number;
   cancelled: number;
+  notGenuine: number;
   /** "NO. OF CONFIRMATIONS": jobs confirmed in the period, whenever the enquiry was raised. */
   confirmations: number;
   confirmedSell: number;
@@ -142,11 +144,13 @@ function sum(rows: EnquiryRow[], pick: (r: EnquiryRow) => number | null): number
 /** `raised`: enquiry date in the period. `confirmed`: confirmation date in the period and status confirmed. */
 export function buildPeriodReport(p: Period, raised: EnquiryRow[], confirmed: EnquiryRow[]): PeriodReport {
   const cancelled = raised.filter((r) => r.status === "cancelled").length;
+  const notGenuine = raised.filter((r) => r.status === "not_genuine").length;
   return {
     raised: [...raised].sort(byDateThenReference),
     earlier: confirmed.filter((r) => r.enquiry_date < p.from).sort(byDateThenReference),
-    enquiries: raised.length - cancelled,
+    enquiries: raised.length - cancelled - notGenuine,
     cancelled,
+    notGenuine,
     confirmations: confirmed.length,
     confirmedSell: sum(confirmed, (r) => r.sell_total),
     confirmedProfit: sum(confirmed, (r) => r.profit),
@@ -155,7 +159,7 @@ export function buildPeriodReport(p: Period, raised: EnquiryRow[], confirmed: En
 
 export interface ModeTotal {
   mode: ShipmentMode;
-  /** Enquiries raised in the period (not cancelled). */
+  /** Enquiries raised in the period (not cancelled or not genuine). */
   enquiries: number;
   /** Jobs confirmed in the period, with their units and profit. */
   confirmed: number;
@@ -172,7 +176,7 @@ export function modeTotals(raised: EnquiryRow[], confirmed: EnquiryRow[]): ModeT
     if (!t) totals.set(mode, (t = { mode, enquiries: 0, confirmed: 0, units: 0, profit: 0 }));
     return t;
   };
-  for (const r of raised) if (r.status !== "cancelled") of(r).enquiries++;
+  for (const r of raised) if (countsAsEnquiry(r.status)) of(r).enquiries++;
   for (const r of confirmed) {
     const t = of(r);
     t.confirmed++;
@@ -212,7 +216,7 @@ export type SummaryTotals = Omit<SalespersonSummaryRow, "sales_person">;
 export function summaryTotals(rows: SalespersonSummaryRow[]): SummaryTotals {
   const t: SummaryTotals = {
     total_enquiries: 0, confirmed: 0, confirmed_new: 0, confirmed_old: 0, fcl_jobs: 0,
-    fcl_units: 0, air: 0, lcl: 0, courier: 0, other: 0, profit: 0,
+    fcl_units: 0, air: 0, lcl: 0, courier: 0, other: 0, profit: 0, not_genuine: 0,
   };
   for (const r of rows) {
     for (const k of Object.keys(t) as (keyof SummaryTotals)[]) t[k] += Number(r[k]) || 0;
@@ -279,7 +283,7 @@ export function comparePeriod(p: Period, today: string): { current: Period; prev
 }
 
 export interface ReportFigures {
-  /** Raised in the period, cancelled not counted. */
+  /** Raised in the period, cancelled and not genuine not counted. */
   enquiries: number;
   /** Of those, the ones quoted. */
   quoted: number;
@@ -292,7 +296,7 @@ export interface ReportFigures {
 }
 
 export function reportFigures(raised: EnquiryRow[], confirmed: EnquiryRow[]): ReportFigures {
-  const live = raised.filter((r) => r.status !== "cancelled");
+  const live = raised.filter((r) => countsAsEnquiry(r.status));
   return {
     enquiries: live.length,
     quoted: live.filter((r) => r.quoted_date || r.status === "quoted" || r.status === "confirmed").length,
@@ -309,11 +313,11 @@ export interface DayCount {
   confirmed: number;
 }
 
-/** Enquiries raised (not cancelled) and jobs confirmed on each day of the period. */
+/** Enquiries raised (not cancelled or not genuine) and jobs confirmed on each day of the period. */
 export function dailySeries(p: Period, raised: EnquiryRow[], confirmed: EnquiryRow[]): DayCount[] {
   const days = new Map<string, DayCount>();
   for (let d = p.from; d <= p.to; d = addDays(d, 1)) days.set(d, { date: d, enquiries: 0, confirmed: 0 });
-  for (const r of raised) if (r.status !== "cancelled") days.get(r.enquiry_date)!.enquiries++;
+  for (const r of raised) if (countsAsEnquiry(r.status)) days.get(r.enquiry_date)!.enquiries++;
   for (const r of confirmed) {
     const day = r.confirmed_date && days.get(r.confirmed_date);
     if (day) day.confirmed++;
@@ -340,4 +344,23 @@ export function topCustomers(confirmed: EnquiryRow[], n = 5): { name: string; pr
 export function monthPace(p: Period, today: string, profit: number): number | null {
   if (p.kind !== "monthly" || today < p.from || today >= p.to) return null;
   return Math.round((profit / daysInRange(p.from, today)) * daysInRange(p.from, p.to));
+}
+
+// --- Not genuine enquiries per sales person ------------------------------------------------------
+
+/** Share of a person's enquiries (counted plus not genuine) they marked not genuine, 0–1; 0 with no enquiries. */
+export function notGenuineShare(r: Pick<SalespersonSummaryRow, "total_enquiries" | "not_genuine">): number {
+  const all = r.total_enquiries + r.not_genuine;
+  return all ? r.not_genuine / all : 0;
+}
+
+/** The fewest not-genuine enquiries that can make a person stand out (see notGenuineIsHigh). */
+export const NOT_GENUINE_MIN_FLAG = 5;
+
+/**
+ * Marking an enquiry not genuine takes it out of the person's conversion, so a manager should see who marks far more
+ * than the rest of the team: at least NOT_GENUINE_MIN_FLAG, and at least twice the team's share.
+ */
+export function notGenuineIsHigh(r: Pick<SalespersonSummaryRow, "total_enquiries" | "not_genuine">, team: Pick<SummaryTotals, "total_enquiries" | "not_genuine">): boolean {
+  return r.not_genuine >= NOT_GENUINE_MIN_FLAG && notGenuineShare(r) >= 2 * notGenuineShare(team);
 }

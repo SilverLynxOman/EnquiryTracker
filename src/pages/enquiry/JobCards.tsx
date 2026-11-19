@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import { Card } from "../../components/ui";
-import { describeCommission } from "../../lib/commission";
 import { displayName, shipmentLabel, TRADE_LABELS } from "../../lib/display";
-import { fmtMoney, fmtPercent } from "../../lib/format";
 import { MODE_LABELS, type EnquiryRow } from "../../lib/types";
 
 function Facts({ items }: { items: [string, ReactNode][] }) {
@@ -64,77 +62,6 @@ export function ShipmentCard({ row }: { row: EnquiryRow }) {
         </Block>
       )}
       {row.subject && <p className="mt-4 border-t border-line pt-3 text-meta text-ink-muted">Subject: {row.subject}</p>}
-    </Card>
-  );
-}
-
-/** Buy, sell and profit as the register holds them. */
-export function RatesCard({ row }: { row: EnquiryRow }) {
-  const hasRates = row.buy_total != null || row.sell_total != null;
-  const perUnit = (row.units ?? 0) > 1;
-  const money = (n: number | null) => (n == null ? <span className="text-ink-muted">Not entered</span> : fmtMoney(n));
-  return (
-    <Card title={`Rates (${row.currency.trim()})`}>
-      {!hasRates ? (
-        <p className="text-body text-ink-muted">
-          No rates entered yet.
-          {row.status === "confirmed" && <span className="text-await"> Without a sell amount, the reports miss this job's profit.</span>}
-        </p>
-      ) : (
-        <table className="w-full text-body">
-          <thead>
-            <tr className="text-left text-meta text-ink-muted">
-              <th scope="col" className="pb-1 font-medium">
-                <span className="sr-only">Side</span>
-              </th>
-              {perUnit && (
-                <th scope="col" className="pb-1 text-right font-medium">
-                  Per unit
-                </th>
-              )}
-              <th scope="col" className="pb-1 text-right font-medium">
-                Total{perUnit ? ` (${row.units} units)` : ""}
-              </th>
-            </tr>
-          </thead>
-          <tbody className="tabular-nums">
-            <tr className="border-t border-line">
-              <th scope="row" className="py-1.5 text-left font-normal text-ink-heading">
-                Buy
-              </th>
-              {perUnit && <td className="py-1.5 text-right">{money(row.buy_rate)}</td>}
-              <td className="py-1.5 text-right">{money(row.buy_total)}</td>
-            </tr>
-            <tr className="border-t border-line">
-              <th scope="row" className="py-1.5 text-left font-normal text-ink-heading">
-                Sell
-              </th>
-              {perUnit && <td className="py-1.5 text-right">{money(row.sell_rate)}</td>}
-              <td className="py-1.5 text-right">{money(row.sell_total)}</td>
-            </tr>
-            <tr className="border-t border-line">
-              <th scope="row" className="py-1.5 text-left font-semibold text-ink">
-                Profit
-              </th>
-              {perUnit && <td />}
-              <td className={`py-1.5 text-right font-semibold ${row.profit != null && row.profit < 0 ? "text-lost" : "text-ink"}`}>
-                {row.profit == null ? "—" : fmtMoney(row.profit)}
-                {row.profit != null && row.sell_total ? (
-                  <span className="ml-1 font-normal text-ink-muted">({fmtPercent(row.profit, row.sell_total)})</span>
-                ) : null}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      )}
-      {row.commission_amount != null && (
-        <p className="mt-3 border-t border-line pt-3 text-body text-ink-heading">
-          Commission:{" "}
-          <span className="font-medium tabular-nums text-ink">
-            {describeCommission({ amount: row.commission_amount, currency: row.commission_currency ?? null, perUnit: !!row.commission_per_unit }, row.units)}
-          </span>
-        </p>
-      )}
     </Card>
   );
 }

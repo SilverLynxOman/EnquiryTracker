@@ -22,6 +22,16 @@ interface Draft {
   quote: boolean;
 }
 
+/** What the reply starts with when the caller already knows: who it goes to, the subject, the first lines, and what to check. */
+export interface ReplyBoxPrefill {
+  to?: string[];
+  cc?: string[];
+  subject?: string;
+  message?: string;
+  /** Shown above the fields: "purchase@… bounced on Sat 08 Nov — check the address". */
+  warnings?: string[];
+}
+
 // Drafts and the signature live in this browser only: a convenience, so every access may fail (private windows).
 function readStore<T>(key: string): T | null {
   try {
@@ -39,6 +49,15 @@ function writeStore(key: string, value: unknown) {
     /* not saved; the reply still works */
   }
 }
+
+/**
+ * Where the draft of a reply to one e-mail is kept: one per e-mail answered, so opening a reply to another e-mail
+ * of the enquiry never overwrites the draft of the first.
+ */
+export const replyDraftKey = (enquiryId: string, targetId: string) => `reply-draft:${enquiryId}:${targetId}`;
+
+/** The one draft per enquiry kept before drafts were per e-mail: still read for the e-mail it was written to. */
+const legacyDraftKey = (enquiryId: string) => `reply-draft:${enquiryId}`;
 
 function fmtSize(bytes: number): string {
   return bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1000))} KB`;
@@ -62,6 +81,7 @@ export function ReplyBox({
   mailbox,
   onClose,
   onSent,
+  prefill,
 }: {
   enquiryId: string;
   reference: string;
@@ -70,14 +90,40 @@ export function ReplyBox({
   mailbox?: string;
   onClose: () => void;
   onSent: (message: string) => void;
+  /** Suggested values for a new reply. A draft kept for the same e-mail wins over them. */
+  prefill?: ReplyBoxPrefill;
 }) {
-  const draftKey = `reply-draft:${enquiryId}`;
-  const initial = useMemo(() => {
-    const saved = readStore<Draft>(draftKey);
-    if (saved && saved.targetId === target.id && saved.all === all) return saved;
+  const draftKey = replyDraftKey(enquiryId, target.id);
+  const legacyKey = legacyDraftKey(enquiryId);
+  /** A change not written yet: written when the box closes. */
+  const pending = useRef<Draft | null>(null);
+  /** Drops the draft of this reply, and the old single draft when it was this reply's. */
+  const forget = () => {
+    pending.current = null;
+    writeStore(draftKey, null);
+    if (readStore<Draft>(legacyKey)?.targetId === target.id) writeStore(legacyKey, null);
+  };
+  /** A new reply: the suggested values where there are any, else who the e-mail came from and its subject. */
+  const fresh = (): Draft => {
     const r = replyRecipients(target, mailbox ? [mailbox] : [], all);
-    return { targetId: target.id, all, to: r.to.join(", "), cc: r.cc.join(", "), subject: replySubject(target.subject, reference), message: "", quote: true };
-  }, [draftKey, target, all, mailbox, reference]);
+    return {
+      targetId: target.id,
+      all,
+      to: (prefill?.to?.length ? prefill.to : r.to).join(", "),
+      cc: (prefill?.cc ?? r.cc).join(", "),
+      subject: prefill?.subject?.trim() ? prefill.subject : replySubject(target.subject, reference),
+      message: prefill?.message ?? "",
+      quote: true,
+    };
+  };
+  const initial = useMemo(() => {
+    const saved = readStore<Draft>(draftKey) ?? readStore<Draft>(legacyKey);
+    if (saved && saved.targetId === target.id && saved.all === all) return { ...saved, kept: true };
+    return { ...fresh(), kept: false };
+  }, [draftKey, legacyKey, target, all, mailbox, reference]);
+  /** What the box opened with: a suggestion nobody has changed is not kept as a draft. */
+  const opened = useRef(initial);
+  const stored = useRef(false);
 
   const [to, setTo] = useState(initial.to);
   const [cc, setCc] = useState(initial.cc);
@@ -91,16 +137,56 @@ export function ReplyBox({
   const [phase, setPhase] = useState<"edit" | "confirm" | "countdown" | "sending">("edit");
   const [left, setLeft] = useState(UNDO_SECONDS);
   const [error, setError] = useState<string | null>(null);
+  /** A kept draft is shown where the caller suggested another text: the person may take the suggestion instead. */
+  const [keptOverSuggestion, setKeptOverSuggestion] = useState(initial.kept && !!prefill?.message?.trim() && prefill.message.trim() !== initial.message.trim());
   const textRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => textRef.current?.focus(), []);
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    el.focus();
+    // A suggested message is continued, not written before.
+    if (prefill && el.value) el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
 
   // Keep the draft while the person moves around.
   useEffect(() => {
-    const t = setTimeout(() => writeStore(draftKey, { targetId: target.id, all, to, cc, subject, message, quote } satisfies Draft), 400);
+    const start = opened.current;
+    const unchanged = to === start.to && cc === start.cc && subject === start.subject && message === start.message && quote === start.quote;
+    // A suggestion nobody touched would otherwise come back in place of the next suggestion for the same e-mail.
+    if (prefill && !start.kept && !stored.current && unchanged) {
+      pending.current = null;
+      return;
+    }
+    const draft: Draft = { targetId: target.id, all, to, cc, subject, message, quote };
+    pending.current = draft;
+    const t = setTimeout(() => {
+      stored.current = true;
+      pending.current = null;
+      writeStore(draftKey, draft);
+    }, 400);
     return () => clearTimeout(t);
   }, [draftKey, target.id, all, to, cc, subject, message, quote]);
+
+  // The box closing (another reply opened, the view switched) keeps what was typed in the last moment too.
+  useEffect(
+    () => () => {
+      if (pending.current) writeStore(draftKey, pending.current);
+    },
+    [draftKey],
+  );
+
+  function takeSuggestion() {
+    const next = fresh();
+    setTo(next.to);
+    setCc(next.cc);
+    if (next.cc) setShowCc(true);
+    setSubject(next.subject);
+    setMessage(next.message);
+    setKeptOverSuggestion(false);
+    textRef.current?.focus();
+  }
 
   const toList = parseAddresses(to);
   const ccList = parseAddresses(cc).filter((a) => !toList.includes(a));
@@ -125,7 +211,7 @@ export function ReplyBox({
       const attachments = await Promise.all(files.map(async (f) => ({ filename: f.name, mimeType: f.type || "application/octet-stream", data: await fileToBase64(f) })));
       const body = composeReply(message, signature, quote ? quoteEmail(target) : null);
       const r = await sendReply({ replyToEmailId: target.id, to: toList, cc: ccList, subject: subject.trim(), body, attachments });
-      writeStore(draftKey, null);
+      forget();
       onSent(r.message);
     } catch (e) {
       setError(errorMessage(e));
@@ -145,17 +231,22 @@ export function ReplyBox({
   }, [phase, left]);
 
   function discard() {
-    if ((message.trim() || files.length) && !window.confirm("Discard this reply?")) return;
-    writeStore(draftKey, null);
+    // A suggested message nobody changed is not the person's writing: nothing to ask about.
+    const suggestionOnly = !!prefill && !opened.current.kept && message === opened.current.message;
+    if (((message.trim() && !suggestionOnly) || files.length) && !window.confirm("Discard this reply?")) return;
+    // Nothing of this reply was kept, so a draft kept earlier for this e-mail stays.
+    if (!(suggestionOnly && !stored.current)) forget();
+    else pending.current = null;
     onClose();
   }
 
   const locked = phase !== "edit";
+  const warnings = (prefill?.warnings ?? []).filter((warning) => warning.trim());
   const label = "w-12 shrink-0 text-meta font-medium text-ink-muted";
   const fieldClass = `${inputClass} h-8`;
 
   return (
-    <section aria-label={all ? "Reply to all" : "Reply"} className="flex min-h-0 flex-col border-t-2 border-primary bg-surface">
+    <section aria-label={all ? "Reply to all" : "Reply"} data-reply-box="" className="flex min-h-0 flex-col scroll-mt-20 border-t-2 border-primary bg-surface">
       <div className="flex items-center gap-2 px-4 pt-2.5 pb-1">
         <Icon name="send" className="size-4 text-primary" />
         <h3 className="text-body font-semibold text-ink">{all ? "Reply to all" : "Reply"}</h3>
@@ -166,6 +257,24 @@ export function ReplyBox({
       </div>
 
       <div className="min-h-0 space-y-2 overflow-y-auto px-4 pb-3">
+        {warnings.length > 0 && (
+          <ul role="list" aria-label="Check before you send" className="space-y-1 rounded-control border border-await/25 bg-await-bg px-3 py-2 text-meta font-medium text-await">
+            {warnings.map((warning, i) => (
+              <li key={i} className="flex items-start gap-1.5">
+                <Icon name="alert" className="mt-0.5 size-3.5" />
+                <span className="min-w-0 break-words">{warning}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {keptOverSuggestion && (
+          <div className="flex flex-wrap items-center gap-x-2 text-meta text-ink-muted" role="status">
+            <span>This is the draft you kept for this e-mail.</span>
+            <button type="button" disabled={locked} className="font-medium text-primary hover:underline disabled:text-ink-muted" onClick={takeSuggestion}>
+              Start from the suggested text instead
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <label htmlFor="reply-to" className={label}>
             To

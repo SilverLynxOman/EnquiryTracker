@@ -6,7 +6,7 @@ import { Icon } from "../components/icons";
 import { controlBase, SelectBox } from "../components/SelectBox";
 import { Alert, Button, Empty } from "../components/ui";
 import {
-  closeEnquiriesAsLost,
+  closeEnquiries,
   fetchFollowUpHistory,
   logFollowUp,
   undoFollowUp,
@@ -15,6 +15,7 @@ import {
   fetchSalesPersons,
   queryFollowUps,
   reopenEnquiries,
+  type CloseKind,
   type SortDirection,
 } from "../lib/api";
 import { displayName } from "../lib/display";
@@ -23,6 +24,7 @@ import { bandFilters, FOLLOW_UP_BANDS, isFollowUpBand, latestFollowUps, STALE_DA
 import type { EnquiryRow } from "../lib/types";
 import { FollowUpTable } from "./followups/FollowUpTable";
 import { MarkLostDialog } from "./followups/MarkLostDialog";
+import { NotGenuineDialog } from "./followups/NotGenuineDialog";
 import { Pagination } from "./register/Pagination";
 
 /** `sp` in the URL: a sales person id, or "all". Without it, a sales user sees their own enquiries first. */
@@ -46,8 +48,8 @@ export default function FollowUpsPage() {
   const [size, setSize] = useState(25);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   /** Rows the dialog is about to close: the selection, or the one row whose menu was used. */
-  const [closing, setClosing] = useState<{ ids: string[]; references: string[] } | null>(null);
-  const [closed, setClosed] = useState<{ ids: string[]; reason: string } | null>(null);
+  const [closing, setClosing] = useState<{ kind: CloseKind; ids: string[]; references: string[] } | null>(null);
+  const [closed, setClosed] = useState<{ kind: CloseKind; ids: string[]; reason: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const update = (changes: Record<string, string>) => {
@@ -123,11 +125,11 @@ export default function FollowUpsPage() {
   });
 
   const markLost = useMutation({
-    mutationFn: ({ ids, reason }: { ids: string[]; reason: string }) => closeEnquiriesAsLost(ids, reason),
-    onSuccess: (ids, { reason }) => {
+    mutationFn: ({ kind, ids, reason }: { kind: CloseKind; ids: string[]; reason: string }) => closeEnquiries(kind, ids, reason),
+    onSuccess: (ids, { kind, reason }) => {
       setClosing(null);
       setSelected(new Set());
-      setClosed({ ids, reason: reason.trim() });
+      setClosed({ kind, ids, reason: reason.trim() });
       void queryClient.invalidateQueries();
     },
   });
@@ -162,9 +164,9 @@ export default function FollowUpsPage() {
       }
       return next;
     });
-  const openDialog = (ids: string[]) => {
+  const openDialog = (kind: CloseKind, ids: string[]) => {
     markLost.reset();
-    setClosing({ ids, references: ids.map((id) => references.get(id)).filter((r): r is string => !!r) });
+    setClosing({ kind, ids, references: ids.map((id) => references.get(id)).filter((r): r is string => !!r) });
   };
 
   const personName = people.data?.find((p) => p.id === salesPersonId)?.name;
@@ -250,7 +252,11 @@ export default function FollowUpsPage() {
             <Button variant="ghost" onClick={() => setSelected(new Set())}>
               Clear
             </Button>
-            <Button variant="secondary" onClick={() => openDialog([...selected])}>
+            <Button variant="secondary" onClick={() => openDialog("not_genuine", [...selected])}>
+              <Icon name="flag" />
+              Not genuine…
+            </Button>
+            <Button variant="secondary" onClick={() => openDialog("lost", [...selected])}>
               <Icon name="close" />
               Mark lost…
             </Button>
@@ -272,7 +278,7 @@ export default function FollowUpsPage() {
             </div>
           }
         >
-          {closed.ids.length.toLocaleString()} {closed.ids.length === 1 ? "enquiry" : "enquiries"} marked as lost: “{closed.reason}”.
+          {closed.ids.length.toLocaleString()} {closed.ids.length === 1 ? "enquiry" : "enquiries"} {closed.kind === "lost" ? "marked as lost" : "marked not genuine"}: “{closed.reason}”.
         </Alert>
       )}
       {error && (
@@ -296,7 +302,8 @@ export default function FollowUpsPage() {
             onToggle={toggle}
             onTogglePage={togglePage}
             onConfirm={(r: EnquiryRow) => navigate(`/enquiries/${r.id}/edit?confirm=1`)}
-            onMarkLost={(r: EnquiryRow) => openDialog([r.id])}
+            onMarkLost={(r: EnquiryRow) => openDialog("lost", [r.id])}
+            onMarkNotGenuine={(r: EnquiryRow) => openDialog("not_genuine", [r.id])}
             lastFollowUp={lastFollowUp}
             mineToday={mineToday}
             personName={(id) => names.get(id) ?? "a colleague"}
@@ -323,14 +330,24 @@ export default function FollowUpsPage() {
         {total > 0 && <Pagination page={page} size={size} total={total} onPage={setPage} onSize={(s) => (setSize(s), setPage(0))} />}
       </section>
 
-      {closing && (
+      {closing?.kind === "lost" && (
         <MarkLostDialog
           count={closing.ids.length}
           references={closing.references}
           saving={markLost.isPending}
           error={markLost.error}
           onClose={() => setClosing(null)}
-          onConfirm={(reason) => markLost.mutate({ ids: closing.ids, reason })}
+          onConfirm={(reason) => markLost.mutate({ kind: "lost", ids: closing.ids, reason })}
+        />
+      )}
+      {closing?.kind === "not_genuine" && (
+        <NotGenuineDialog
+          count={closing.ids.length}
+          references={closing.references}
+          saving={markLost.isPending}
+          error={markLost.error}
+          onClose={() => setClosing(null)}
+          onConfirm={(reason) => markLost.mutate({ kind: "not_genuine", ids: closing.ids, reason })}
         />
       )}
 

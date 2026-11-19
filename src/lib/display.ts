@@ -20,6 +20,8 @@ export function displayName(raw: string | null | undefined): string {
   if (!raw) return "";
   const text = raw.trim().replace(/\s+/g, " ");
   if (/[a-z]/.test(text)) return text;
+  // A short code on its own is an agent's or a carrier's name as written: WWL, MLE, RCS.
+  if (/^[A-Z]{2,3}$/.test(text)) return text;
   return text
     .split(" ")
     .map((word) => {
@@ -93,6 +95,7 @@ export function statusDetail(r: EnquiryRow, today: string): { text: string; long
       return { text: r.confirmed_date ? fmtDayMonth(r.confirmed_date, today) : "", longWait: false };
     case "lost":
     case "cancelled":
+    case "not_genuine":
       return { text: r.closure_reason?.trim() || "No reason recorded", longWait: false };
   }
 }

@@ -12,6 +12,9 @@ describe("displayName", () => {
     expect(displayName("SOHAR STEEL LLC")).toBe("Sohar Steel LLC");
     expect(displayName("NHAVA-SHEVA")).toBe("Nhava-Sheva");
     expect(displayName("  GULF   STAR INDUSTRIES ")).toBe("Gulf Star Industries");
+    // A short code on its own is an agent's name as written.
+    expect(displayName("WWL")).toBe("WWL");
+    expect(displayName("RCS")).toBe("RCS");
   });
 
   it("leaves mixed-case names and blanks alone", () => {

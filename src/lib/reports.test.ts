@@ -11,6 +11,8 @@ import {
   dayPeriod,
   modeTotals,
   monthPeriod,
+  notGenuineIsHigh,
+  notGenuineShare,
   percent,
   periodFileName,
   periodTitle,
@@ -100,11 +102,47 @@ describe("buildPeriodReport", () => {
   });
 });
 
+describe("not genuine enquiries", () => {
+  const p = dayPeriod("2026-11-01");
+  const raised = [
+    enquiry({ reference: "SL262801", enquiry_date: "2026-11-01", quoted_date: "2026-11-01", confirmed_date: "2026-11-01", sell_total: 900, profit: 90 }),
+    enquiry({ reference: "SL262802", enquiry_date: "2026-11-01", quoted_date: "2026-11-01" }),
+    enquiry({ reference: "SL262803", enquiry_date: "2026-11-01", quoted_date: "2026-11-01", closure: "not_genuine", status: "not_genuine" }),
+    enquiry({ reference: "SL262804", enquiry_date: "2026-11-01", closure: "cancelled", status: "cancelled" }),
+  ];
+  const confirmed = [raised[0]];
+
+  it("stay listed in the report but are not counted as enquiries", () => {
+    const report = buildPeriodReport(p, raised, confirmed);
+    expect(report.raised).toHaveLength(4);
+    expect(report).toMatchObject({ enquiries: 2, cancelled: 1, notGenuine: 1 });
+  });
+
+  it("are left out of the figures, the daily series and the mode totals", () => {
+    expect(reportFigures(raised, confirmed)).toMatchObject({ enquiries: 2, quoted: 2, converted: 1 });
+    expect(dailySeries(p, raised, confirmed)).toEqual([{ date: "2026-11-01", enquiries: 2, confirmed: 1 }]);
+    expect(modeTotals(raised, confirmed)).toEqual([{ mode: "LCL", enquiries: 2, confirmed: 1, units: 0, profit: 90 }]);
+  });
+
+  it("are a share of all the person's enquiries", () => {
+    expect(notGenuineShare({ total_enquiries: 22, not_genuine: 9 })).toBeCloseTo(0.29, 2);
+    expect(notGenuineShare({ total_enquiries: 0, not_genuine: 0 })).toBe(0);
+  });
+
+  it("flag a person who marks at least 5 and twice the team's share", () => {
+    const team = { total_enquiries: 158, not_genuine: 19 }; // 11%
+    expect(notGenuineIsHigh({ total_enquiries: 22, not_genuine: 9 }, team)).toBe(true); // 29%
+    expect(notGenuineIsHigh({ total_enquiries: 28, not_genuine: 3 }, team)).toBe(false); // 10%, and only 3
+    expect(notGenuineIsHigh({ total_enquiries: 60, not_genuine: 5 }, team)).toBe(false); // 5, but 8%
+    expect(notGenuineIsHigh({ total_enquiries: 4, not_genuine: 4 }, team)).toBe(false); // 50%, but only 4
+  });
+});
+
 describe("helpers", () => {
   it("adds up the sales-person summary", () => {
     const row = (sales_person: string, n: number, profit: number): SalespersonSummaryRow => ({
       sales_person, total_enquiries: n, confirmed: 1, confirmed_new: 1, confirmed_old: 0, fcl_jobs: 1, fcl_units: 2,
-      air: 0, lcl: 0, courier: 0, other: 0, profit,
+      air: 0, lcl: 0, courier: 0, other: 0, profit, not_genuine: 0,
     });
     expect(summaryTotals([row("ASHWIN", 8, 100.1), row("FIDA", 5, 0.2)])).toMatchObject({ total_enquiries: 13, confirmed: 2, fcl_units: 4, profit: 100.3 });
   });

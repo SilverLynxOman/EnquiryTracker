@@ -5,6 +5,7 @@ import { supabase } from "./supabase";
 import type {
   AuditEntry,
   BreakdownDimension,
+  PriceChecker,
   AgentSummary,
   BreakdownRow,
   CustomerSummary,
@@ -315,7 +316,7 @@ export type StatusCounts = Record<Status | "all", number>;
 
 /** Number of enquiries per status under the other filters (the status filter itself is ignored). */
 export async function fetchStatusCounts(f: RegisterFilters): Promise<StatusCounts> {
-  const keys = ["all", "new", "quoted", "confirmed", "lost", "cancelled"] as const;
+  const keys = ["all", "new", "quoted", "confirmed", "lost", "cancelled", "not_genuine"] as const;
   const results = await Promise.all(
     keys.map((k) => filtered({ ...f, status: k === "all" ? "" : k }, "id", { count: "exact", head: true })),
   );
@@ -359,7 +360,19 @@ export async function closeEnquiriesAsLost(ids: string[], reason: string): Promi
   return unwrap(await supabase.rpc("close_enquiries_as_lost", { p_ids: ids, p_reason: reason }));
 }
 
-/** Undo for closeEnquiriesAsLost. Returns how many were reopened. */
+/** Closes open enquiries as not genuine. Returns the ids actually closed (confirmed or closed ones are skipped). */
+export async function closeEnquiriesAsNotGenuine(ids: string[], reason: string): Promise<string[]> {
+  return unwrap(await supabase.rpc("close_enquiries_as_not_genuine", { p_ids: ids, p_reason: reason }));
+}
+
+/** How an enquiry is closed from a list or the enquiry page. */
+export type CloseKind = "lost" | "not_genuine";
+
+export function closeEnquiries(kind: CloseKind, ids: string[], reason: string): Promise<string[]> {
+  return kind === "lost" ? closeEnquiriesAsLost(ids, reason) : closeEnquiriesAsNotGenuine(ids, reason);
+}
+
+/** Undo for closeEnquiries (lost or not genuine). Returns how many were reopened. */
 export async function reopenEnquiries(ids: string[]): Promise<number> {
   return unwrap(await supabase.rpc("reopen_enquiries", { p_ids: ids }));
 }
@@ -512,7 +525,7 @@ export async function fetchPeriodRows(from: string, to: string): Promise<{ raise
 /** The last day before `before` on which an enquiry was raised or a job confirmed, or null if none. */
 export async function fetchLastActiveDay(before: string): Promise<string | null> {
   const [raised, confirmed] = await Promise.all([
-    supabase.from("enquiry_register").select("enquiry_date").lt("enquiry_date", before).neq("status", "cancelled").order("enquiry_date", { ascending: false }).limit(1),
+    supabase.from("enquiry_register").select("enquiry_date").lt("enquiry_date", before).not("status", "in", "(cancelled,not_genuine)").order("enquiry_date", { ascending: false }).limit(1),
     supabase.from("enquiry_register").select("confirmed_date").lt("confirmed_date", before).eq("status", "confirmed").order("confirmed_date", { ascending: false }).limit(1),
   ]);
   const a = unwrap<{ enquiry_date: string }[]>(raised)[0]?.enquiry_date ?? null;
@@ -533,6 +546,13 @@ export async function fetchMonthlyTrend(from: string, to: string): Promise<Month
     confirmed_sell: Number(r.confirmed_sell),
     confirmed_profit: Number(r.confirmed_profit),
   }));
+}
+
+// --- Price checkers ----------------------------------------------------------
+
+/** Customers quoted at least `minQuotes` times since `since` with no job booked since then (counts only). */
+export async function fetchPriceCheckers(since: string, minQuotes: number): Promise<PriceChecker[]> {
+  return unwrap(await supabase.rpc("price_checkers", { p_since: since, p_min_quotes: minQuotes }));
 }
 
 // --- The Window (a sales person's home page) and the team voyage ----------------
@@ -780,7 +800,7 @@ export async function fetchRelatedEnquiryIds(
 
 export async function fetchEnquiryEmails(enquiryId: string): Promise<EmailMessage[]> {
   return unwrap(
-    await supabase.from("email_messages").select(EMAIL_COLUMNS).eq("enquiry_id", enquiryId).order("received_at", { ascending: true }),
+    await supabase.from("email_messages").select(`${EMAIL_COLUMNS}, ai_result`).eq("enquiry_id", enquiryId).order("received_at", { ascending: true }),
   );
 }
 

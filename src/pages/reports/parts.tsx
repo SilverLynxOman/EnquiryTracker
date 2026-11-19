@@ -269,7 +269,7 @@ export function DayChart({ days, today }: { days: DayCount[]; today: string }) {
   );
 }
 
-const STATUS_FILTERS: ("" | Status)[] = ["", "new", "quoted", "confirmed", "lost", "cancelled"];
+const STATUS_FILTERS: ("" | Status)[] = ["", "new", "quoted", "confirmed", "lost", "cancelled", "not_genuine"];
 
 function matches(r: EnquiryRow, q: string): boolean {
   return [r.reference, r.customer_name, r.subject, r.agent_name, r.sales_person_name, r.pol, r.pod].some((v) => v?.toLowerCase().includes(q));

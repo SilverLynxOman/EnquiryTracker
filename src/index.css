@@ -48,12 +48,21 @@
   --color-lost-bg: #fef2f2;
   --color-cancelled: #526075;
   --color-cancelled-bg: #f1f3f7;
+  --color-not-genuine: #9d174d;
+  --color-not-genuine-bg: #fdf2f8;
+  --color-not-genuine-line: #fbcfe8;
+  /* Price checker tag: orange, apart from the amber of "awaiting quote" that often sits next to it */
+  --color-price: #9a3412;
+  --color-price-strong: #7c2d12;
+  --color-price-bg: #fff7ed;
+  --color-price-line: #fed7aa;
   /* Small decorative dots beside the status tab labels */
   --color-await-dot: #d97706;
   --color-quoted-dot: #5546d9;
   --color-confirmed-dot: #16a34a;
   --color-lost-dot: #dc2626;
   --color-cancelled-dot: #8a94a6;
+  --color-not-genuine-dot: #db2777;
   --color-danger: #b42318;
   --color-danger-hover: #912018;
 
@@ -88,6 +97,18 @@
   --color-lane-wait: #0f766e;
   --color-lane-mail: #1d4ed8;
   --color-lane-mail-bg: #e6eefe;
+  /*
+   * The enquiry page (docs/DESIGN.md, "Enquiry page"): the customer name, the two figures of the glance band, and who
+   * is talking. Party colours mark the speaker, never a state (each passes 4.5:1 on its ground and on white).
+   */
+  --text-headline: 1.25rem; /* 20px: the customer name on the enquiry page */
+  --text-headline--line-height: 1.75rem;
+  --text-dial: 1.5rem; /* 24px: the offer and the margin in the glance band */
+  --text-dial--line-height: 1.875rem;
+  --color-party-customer: #1d4ed8;
+  --color-party-customer-bg: #e6eefe;
+  --color-party-agent: #0f766e;
+  --color-party-agent-bg: #e6f4f1;
   /* Team-ship containers by sales person, 3:1 or better on the sky; crew-0 is "no sales person" */
   --color-crew-0: #6b7280;
   --color-crew-1: #c2410c;

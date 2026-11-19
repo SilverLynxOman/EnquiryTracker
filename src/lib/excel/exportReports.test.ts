@@ -69,8 +69,8 @@ describe("period report export", () => {
 
   it("adds the DATA summary to weekly and monthly reports; the summary is not taken for a register sheet", () => {
     const summary: SalespersonSummaryRow[] = [
-      { sales_person: "ASHWIN", total_enquiries: 2, confirmed: 1, confirmed_new: 1, confirmed_old: 0, fcl_jobs: 1, fcl_units: 1, air: 0, lcl: 0, courier: 0, other: 0, profit: 140 },
-      { sales_person: "MALIK", total_enquiries: 0, confirmed: 1, confirmed_new: 0, confirmed_old: 1, fcl_jobs: 1, fcl_units: 2, air: 0, lcl: 0, courier: 0, other: 0, profit: 1480 },
+      { sales_person: "ASHWIN", total_enquiries: 2, confirmed: 1, confirmed_new: 1, confirmed_old: 0, fcl_jobs: 1, fcl_units: 1, air: 0, lcl: 0, courier: 0, other: 0, profit: 140, not_genuine: 0 },
+      { sales_person: "MALIK", total_enquiries: 0, confirmed: 1, confirmed_new: 0, confirmed_old: 1, fcl_jobs: 1, fcl_units: 2, air: 0, lcl: 0, courier: 0, other: 0, profit: 1480, not_genuine: 1 },
     ];
     const periods: [Period, string, string, boolean][] = [
       [weekPeriod("2026-11-01"), "DATA1", "WEEKLY REPORT 31.10.2026 TO 06.11.2026", false],
