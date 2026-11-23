@@ -13,7 +13,7 @@ name: Edge Functions
 # - By hand (Actions > Edge Functions > Run workflow): deploy one function, or all of them.
 # Removing a function is not automatic: delete it in the Supabase dashboard (Edge Functions).
 #
-# Uses the SUPABASE_ACCESS_TOKEN repository secret, the same one as the migrations workflow.
+# Uses the SUPABASE_ACCESS_TOKEN repository secret (the migrations workflow uses the database password instead).
 
 on:
   pull_request:

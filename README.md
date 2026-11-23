@@ -72,8 +72,8 @@ One-time setup. In GitHub, go to *Settings → Secrets and variables → Actions
 
 | Secret | Where to get it |
 |---|---|
-| `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens → *Generate new token* |
-| `SUPABASE_DB_PASSWORD` | The database password chosen when the project was created. You can reset it under *Project Settings → Database*. |
+| `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens → *Generate new token*. Used only to deploy Edge Functions. |
+| `SUPABASE_DB_PASSWORD` | The database password chosen when the project was created. You can reset it under *Project Settings → Database*. The migrations workflow connects with it through the eu-west-1 session pooler, so it needs no access token. |
 
 **Edge Functions are deployed automatically too.** `.github/workflows/functions.yml` deploys, after each merge to `main`, the functions changed since its last successful deploy: a file in the function's folder, shared code it imports (`supabase/functions/_shared`), or its section of `supabase/config.toml` (`scripts/edge_functions.py` decides). It takes `verify_jwt` from `supabase/config.toml` and passes it to the CLI explicitly, then checks that each function answers a request itself. Pull requests list what merging would deploy. To deploy by hand: Actions → *Edge Functions* → *Run workflow* (one function, or `all`). It uses the same `SUPABASE_ACCESS_TOKEN` secret.
 
