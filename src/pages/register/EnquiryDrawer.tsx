@@ -2,6 +2,7 @@ import type { ReactNode, RefObject } from "react";
 import { Link } from "react-router";
 import { Icon } from "../../components/icons";
 import { Menu, type MenuItem } from "../../components/Menu";
+import { PriceCheckerTag, usePriceCheckers } from "../../components/PriceChecker";
 import { Alert, Button, buttonClass, IconButton, Spinner, StatusBadge } from "../../components/ui";
 import { displayName, fmtDateLong, nextStep, shipmentLabel, statusDetail, TRADE_LABELS } from "../../lib/display";
 import { describeCommission } from "../../lib/commission";
@@ -31,7 +32,7 @@ function Rows({ items }: { items: [string, ReactNode][] }) {
 }
 
 function Progress({ row, today }: { row: EnquiryRow; today: string }) {
-  const closed = row.status === "lost" || row.status === "cancelled";
+  const closed = row.status === "lost" || row.status === "cancelled" || row.status === "not_genuine";
   const steps = [
     { label: "Enquiry received", date: row.enquiry_date, done: true },
     { label: "Quote sent", date: row.quoted_date, done: !!row.quoted_date },
@@ -101,6 +102,7 @@ export function EnquiryDrawer({
   onMarkQuoted: (row: EnquiryRow) => void;
   onConfirm: (row: EnquiryRow) => void;
 }) {
+  const checkers = usePriceCheckers();
   const step = row ? nextStep(row, canEdit) : "view";
   const route = row ? [row.pol, row.pod].filter(Boolean).map((p) => displayName(p)).join(" → ") : "";
 
@@ -128,6 +130,7 @@ export function EnquiryDrawer({
         <h2 id="enquiry-drawer-title" ref={headingRef} tabIndex={-1} className="mt-1.5 text-title font-semibold text-ink focus:outline-none">
           {row ? displayName(row.customer_name) : "Enquiry details"}
         </h2>
+        {row && checkers.has(row.customer_id) && <PriceCheckerTag info={checkers.get(row.customer_id)!} className="mt-1" />}
         {row?.subject && <p className="text-meta text-ink-muted">{row.subject}</p>}
       </header>
 

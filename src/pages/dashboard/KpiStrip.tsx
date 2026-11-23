@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router";
 import { Alert } from "../../components/ui";
 import { fetchPeriodStats } from "../../lib/api";
 import { addDays, errorMessage, fmtDate, fmtMoney } from "../../lib/format";
+import { DEFAULT_VIEW, writeRegisterView } from "../../lib/registerView";
 import {
   KPI_PERIODS,
   KPIS,
@@ -84,6 +86,8 @@ export function KpiStrip({ today }: { today: string }) {
   const T = pinned.data ? kpiValues(pinned.data) : null;
   const vs = compareLabel(period, compare, today);
   const title = KPI_PERIODS.find((p) => p.value === period)!.title;
+  const notGenuine = cur.data?.not_genuine ?? 0;
+  const notGenuineLink = `/enquiries?${writeRegisterView({ ...DEFAULT_VIEW, status: "not_genuine", period: "custom", from: range.from, to: range.to }).toString()}`;
 
   return (
     <section aria-label="Key figures" className="rounded-panel border border-line bg-surface p-4">
@@ -180,6 +184,14 @@ export function KpiStrip({ today }: { today: string }) {
           );
         })}
       </div>
+      {notGenuine > 0 && (
+        <p className="mt-2 text-meta text-ink-muted">
+          <Link to={notGenuineLink} className="font-medium text-not-genuine underline-offset-2 hover:underline">
+            {notGenuine.toLocaleString("en-US")} not genuine {notGenuine === 1 ? "enquiry" : "enquiries"}
+          </Link>{" "}
+          left out of enquiries, quotes and conversion.
+        </p>
+      )}
     </section>
   );
 }

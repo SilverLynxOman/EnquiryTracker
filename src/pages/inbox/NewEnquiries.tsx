@@ -4,13 +4,16 @@ import { Link } from "react-router";
 import { useAuth } from "../../auth/AuthProvider";
 import { ConfidenceBadge, shownName } from "../../components/EmailView";
 import { Icon } from "../../components/icons";
+import { PriceCheckerNote, PriceCheckerTag, usePriceCheckers } from "../../components/PriceChecker";
 import { Alert, Button, Empty, Spinner, buttonClass, inputClass } from "../../components/ui";
 import { createEnquiryFromDraft, dismissDraft, fetchDraftDuplicates, fetchNames, fetchPendingDrafts, mergeDraft, suggestCustomers } from "../../lib/api";
 import { dayLabel, modeGroup, muscatTime, type ModeFilter } from "../../lib/conversations";
 import { fmtDateLong, shortPort } from "../../lib/display";
 import { confidenceLevel, draftToPayload, muscatDate } from "../../lib/emailDrafts";
+import { lastJobText } from "../../lib/priceCheckers";
 import { errorMessage, fmtDateTime } from "../../lib/format";
-import type { EnquiryDraft } from "../../lib/types";
+import { DEFAULT_VIEW, writeRegisterView } from "../../lib/registerView";
+import type { EnquiryDraft, PriceChecker } from "../../lib/types";
 import { FilterTags, FiltersMenu, toolButton } from "./ListToolbar";
 import {
   Bubble,
@@ -57,6 +60,8 @@ export function NewEnquiries({ mailbox, onNotice, onDone }: { mailbox?: string; 
   const today = muscatDate(new Date().toISOString());
 
   const drafts = useQuery({ queryKey: ["inbox", "drafts"], queryFn: fetchPendingDrafts, refetchInterval: 60_000 });
+  const checkers = usePriceCheckers();
+  const checkerOf = (d: EnquiryDraft) => (d.customer_id ? checkers.get(d.customer_id) : undefined);
   const all = drafts.data ?? [];
   const shown = all
     .filter((d) => (!mode || modeGroup(d.fields?.shipment_mode) === mode) && matches(q, d.customer_name, d.contact_name, d.contact_email, d.summary, d.fields?.pol, d.fields?.pod, d.fields?.subject))
@@ -77,6 +82,7 @@ export function NewEnquiries({ mailbox, onNotice, onDone }: { mailbox?: string; 
       <DraftRow
         key={d.id}
         draft={d}
+        checker={checkerOf(d)}
         active={d === selected}
         onPick={() => {
           update({ e: d.id });
@@ -150,7 +156,7 @@ export function NewEnquiries({ mailbox, onNotice, onDone }: { mailbox?: string; 
       paneRef={paneRef}
       pane={
         selected ? (
-          <DraftPane key={selected.id} draft={selected} mailbox={mailbox} onNotice={onNotice} onDone={onDone} />
+          <DraftPane key={selected.id} draft={selected} checker={checkerOf(selected)} mailbox={mailbox} onNotice={onNotice} onDone={onDone} />
         ) : (
           !drafts.isLoading && <PanePlaceholder>Pick a new enquiry to check it.</PanePlaceholder>
         )
@@ -159,7 +165,7 @@ export function NewEnquiries({ mailbox, onNotice, onDone }: { mailbox?: string; 
   );
 }
 
-function DraftRow({ draft, active, onPick }: { draft: EnquiryDraft; active: boolean; onPick: () => void }) {
+function DraftRow({ draft, checker, active, onPick }: { draft: EnquiryDraft; checker?: PriceChecker; active: boolean; onPick: () => void }) {
   const level = confidenceLevel(draft.confidence);
   const files = draft.emails.reduce((n, m) => n + m.attachments.length, 0);
   return (
@@ -177,6 +183,7 @@ function DraftRow({ draft, active, onPick }: { draft: EnquiryDraft; active: bool
           ) : draft.customer_name ? (
             <Tag className="bg-selected text-primary max-sm:hidden">New customer</Tag>
           ) : null}
+          {checker && <PriceCheckerTag info={checker} />}
         </>
       }
       time={muscatTime(draft.received_at)}
@@ -218,7 +225,19 @@ function Detail({ label, children, wide = false }: { label: string; children: Re
   );
 }
 
-function DraftPane({ draft, mailbox, onNotice, onDone }: { draft: EnquiryDraft; mailbox?: string; onNotice: (n: ReactNode) => void; onDone: () => void }) {
+function DraftPane({
+  draft,
+  checker,
+  mailbox,
+  onNotice,
+  onDone,
+}: {
+  draft: EnquiryDraft;
+  checker?: PriceChecker;
+  mailbox?: string;
+  onNotice: (n: ReactNode) => void;
+  onDone: () => void;
+}) {
   const { canEdit } = useAuth();
   const [customer, setCustomer] = useState(draft.customer_name ?? "");
   const [merging, setMerging] = useState(false);
@@ -299,6 +318,17 @@ function DraftPane({ draft, mailbox, onNotice, onDone }: { draft: EnquiryDraft; 
           <ConfidenceBadge value={draft.confidence} />
         </div>
         {(f.pol || f.pod) && <RouteLine pol={f.pol} pod={f.pod} extra={shipmentExtra(f)} />}
+        {checker && (
+          <PriceCheckerNote info={checker} className="mt-2">
+            {lastJobText(checker)}{" "}
+            <Link
+              to={`/enquiries?${writeRegisterView({ ...DEFAULT_VIEW, period: "all", q: draft.customer_name ?? "" }).toString()}`}
+              className="font-medium text-price underline-offset-2 hover:underline"
+            >
+              See their enquiries
+            </Link>
+          </PriceCheckerNote>
+        )}
       </PaneHeader>
 
       <PaneBody

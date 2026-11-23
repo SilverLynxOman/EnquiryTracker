@@ -57,6 +57,16 @@ export const LOST_REASONS = [
   "Enquiry withdrawn by customer",
 ];
 
+/** Why an enquiry is not genuine (supabase/migrations/20261109100000_not_genuine.sql); "Other" takes a note instead. */
+export const NOT_GENUINE_REASONS = ["Fake or spam enquiry", "Competitor checking our rates", "Contact details don't work"];
+
+/** The reason saved on the enquiry: the chosen reason and the note, or the note alone ("Other"). Empty when neither. */
+export function notGenuineReason(choice: string, note: string): string {
+  const n = note.trim().replace(/\s+/g, " ");
+  if (!choice) return n;
+  return n ? `${choice} — ${n}` : choice;
+}
+
 /** The latest follow-up per enquiry (several sales persons may chase the same quote). */
 export function latestFollowUps(records: FollowUpRecord[]): Map<string, FollowUpRecord> {
   const out = new Map<string, FollowUpRecord>();

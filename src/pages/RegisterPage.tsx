@@ -4,10 +4,12 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import type { MenuItem } from "../components/Menu";
 import { Alert, Button, buttonClass, Empty } from "../components/ui";
-import { fetchEnquiry, fetchSalesPersons, fetchStatusCounts, markQuoted, queryRegister } from "../lib/api";
+import { closeEnquiriesAsNotGenuine, fetchEnquiry, fetchSalesPersons, fetchStatusCounts, markQuoted, queryRegister } from "../lib/api";
+import { displayName } from "../lib/display";
 import { errorMessage, todayIso } from "../lib/format";
 import { DEFAULT_VIEW, OPTIONAL_COLUMNS, readRegisterView, viewFilters, writeRegisterView, type ColumnPrefs, type OptionalColumn, type RegisterView } from "../lib/registerView";
 import type { EnquiryRow } from "../lib/types";
+import { NotGenuineDialog } from "./followups/NotGenuineDialog";
 import { EnquiryDrawer } from "./register/EnquiryDrawer";
 import { Pagination } from "./register/Pagination";
 import { RegisterTable } from "./register/RegisterTable";
@@ -50,6 +52,7 @@ export default function RegisterPage() {
   const [columns, toggleColumn] = useColumnPrefs();
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [flagging, setFlagging] = useState<EnquiryRow | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusDrawer = useRef(false);
 
@@ -129,6 +132,15 @@ export default function RegisterPage() {
     onError: (e, row) => setActionError(`${row.reference} could not be marked as quoted. ${errorMessage(e)}`),
   });
 
+  const flag = useMutation({
+    mutationFn: ({ row, reason }: { row: EnquiryRow; reason: string }) => closeEnquiriesAsNotGenuine([row.id], reason),
+    onSuccess: (_, { row }) => {
+      setFlagging(null);
+      void queryClient.invalidateQueries();
+      setNotice(`${row.reference} marked not genuine. Reopen it from the enquiry page.`);
+    },
+  });
+
   const confirm = (row: EnquiryRow) => navigate(`/enquiries/${row.id}/edit?confirm=1`);
 
   async function copyReference(row: EnquiryRow) {
@@ -146,6 +158,9 @@ export default function RegisterPage() {
     items.push({ label: "Open enquiry", icon: "external", onSelect: () => navigate(`/enquiries/${row.id}`) });
     if (canEdit) items.push({ label: "Edit enquiry", icon: "edit", onSelect: () => navigate(`/enquiries/${row.id}/edit`) });
     if (canEdit && row.status === "new") items.push({ label: "Confirm job…", icon: "check", onSelect: () => confirm(row) });
+    if (canEdit && (row.status === "new" || row.status === "quoted")) {
+      items.push({ label: "Not genuine…", icon: "flag", onSelect: () => (flag.reset(), setFlagging(row)) });
+    }
     items.push({ label: "Copy reference", icon: "copy", onSelect: () => void copyReference(row) });
     return items;
   };
@@ -253,6 +268,18 @@ export default function RegisterPage() {
           />
         )}
       </div>
+
+      {flagging && (
+        <NotGenuineDialog
+          count={1}
+          references={[flagging.reference]}
+          customer={displayName(flagging.customer_name)}
+          saving={flag.isPending}
+          error={flag.error}
+          onClose={() => setFlagging(null)}
+          onConfirm={(reason) => flag.mutate({ row: flagging, reason })}
+        />
+      )}
 
       {notice && (
         <div

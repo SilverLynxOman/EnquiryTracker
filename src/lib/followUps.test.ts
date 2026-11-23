@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addDays } from "./format";
-import { bandFilters, chasedLabel, FOLLOW_UP_BANDS, isFollowUpBand, latestFollowUps, STALE_DAYS, staleQuoteFilters, waitingDays } from "./followUps";
+import { bandFilters, chasedLabel, FOLLOW_UP_BANDS, isFollowUpBand, latestFollowUps, notGenuineReason, STALE_DAYS, staleQuoteFilters, waitingDays } from "./followUps";
 
 const today = "2026-11-04";
 const other = { salesPersonId: "s1", q: "oman" };
@@ -70,5 +70,14 @@ describe("follow-up log", () => {
     expect(chasedLabel(today, today)).toBe("Chased today");
     expect(chasedLabel(ago(1), today)).toBe("Chased yesterday");
     expect(chasedLabel(ago(6), today)).toBe("Chased 6 days ago");
+  });
+});
+
+describe("not genuine reason", () => {
+  it("joins the chosen reason and the note, or takes the note alone", () => {
+    expect(notGenuineReason("Fake or spam enquiry", "")).toBe("Fake or spam enquiry");
+    expect(notGenuineReason("Competitor checking our rates", "  same   domain as Al Noor ")).toBe("Competitor checking our rates — same domain as Al Noor");
+    expect(notGenuineReason("", "Student project")).toBe("Student project");
+    expect(notGenuineReason("", "  ")).toBe("");
   });
 });
